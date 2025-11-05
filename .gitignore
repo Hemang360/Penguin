@@ -1,0 +1,35 @@
+# Node
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.vite/
+**/.vite/
+.npmrc
+
+# Vite
+*.tsbuildinfo
+
+# Go
+api/tmp/
+api/bin/
+api/.air*
+
+# Build artifacts
+*.log
+.DS_Store
+
+# Editor
+.vscode/
+.idea/
+
+# Storage outputs
+api/storage/artifacts/
+api/storage/manifests/
+
+# Env files
+.env
+**/.env
+.env.*
+**/.env.*
+
