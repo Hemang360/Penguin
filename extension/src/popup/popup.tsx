@@ -27,6 +27,8 @@ interface ExtensionState {
     latestInteractionText: string; 
 }
 
+const API_BASE = 'http://localhost:8787';
+
 const style = `
   :root {
     --purple-dark: #4A148C; /* Deep Purple */
@@ -161,6 +163,15 @@ const style = `
     background-image: linear-gradient(to bottom right, #7986CB, var(--info-color));
     border-radius: 10px;
   }
+
+  .send-button {
+    background-color: #FF9800 !important;
+    color: white;
+    width: 100%;
+    margin-top: 10px;
+    background-image: linear-gradient(to bottom right, #FFB74D, #FF9800);
+    border-radius: 10px;
+  }
 `;
 
 const App: React.FC = () => {
@@ -272,17 +283,35 @@ const App: React.FC = () => {
         });
     };
 
-    const copyJson = () => {
-        const text = state.latestInteractionText;
-        if (text && text !== "No interaction captured.") {
-            const tempInput = document.createElement('textarea');
-            tempInput.value = text;
-            document.body.appendChild(tempInput);
-            tempInput.select();
-            let success = false;
-            try { success = document.execCommand('copy'); } catch {}
-            document.body.removeChild(tempInput);
-            setState(s => ({ ...s, dynamicDetail: success ? "JSON copied to clipboard!" : "Copy failed." }));
+    const sendToServer = () => {
+        try {
+            const li = JSON.parse(state.latestInteractionText);
+            const outputStr = typeof li?.output === 'string' ? li.output : JSON.stringify(li?.output ?? []);
+            const metadata: Record<string,string> = {
+                url: String(li?.url ?? ''),
+                'modal-version': String(li?.['modal-version'] ?? ''),
+                input: String(li?.input ?? ''),
+                output: outputStr
+            };
+            const payload = {
+                prompt: li?.input || '',
+                metadata,
+                timestamp: li?.timestamp || new Date().toISOString()
+            };
+            setState(s => ({ ...s, dynamicDetail: 'Sending to /ext/push...' }));
+            fetch(`${API_BASE}/ext/push`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            }).then(async (res) => {
+                const txt = await res.text();
+                if (!res.ok) throw new Error(txt || `HTTP ${res.status}`);
+                setState(s => ({ ...s, dynamicDetail: 'Sent to /ext/push ✔︎' }));
+            }).catch(err => {
+                setState(s => ({ ...s, dynamicDetail: `Send failed: ${err.message}` }));
+            });
+        } catch (e: any) {
+            setState(s => ({ ...s, dynamicDetail: 'Invalid JSON; cannot send.' }));
         }
     };
 
@@ -317,12 +346,12 @@ const App: React.FC = () => {
                 <code className="json-display">
                     {state.latestInteractionText}
                 </code>
-                <button 
-                    onClick={copyJson}
+                <button
+                    onClick={sendToServer}
                     disabled={state.latestInteractionText === "No interaction captured."}
-                    className="copy-button"
+                    className="send-button"
                 >
-                    Copy JSON
+                    Send JSON to Server
                 </button>
             </div>
         </>

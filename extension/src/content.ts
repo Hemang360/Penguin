@@ -258,6 +258,10 @@ interface Attachment {
 async function toDataUrlIfSmall(url: string, maxBytes = 6_000_000): Promise<{ dataUrl?: string; mime?: string }>{
 	try {
 		if (url.startsWith('data:')) return { dataUrl: url, mime: url.substring(5, url.indexOf(';')) };
+		const urlObj = new URL(url, window.location.href);
+		if (urlObj.origin !== window.location.origin) {
+			return {}; 
+		}
 		const res = await fetch(url, { credentials: 'omit' });
 		const blob = await res.blob();
 		if (blob.size > maxBytes) return { mime: blob.type };
