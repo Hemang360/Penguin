@@ -10,7 +10,6 @@ interface ToggleMessage {
     shouldStart: boolean;
 }
 
-// Reverted to capturing 'path'
 interface PathFoundMessage {
     action: "domPathFound";
     path: string;
@@ -31,10 +30,8 @@ interface HistoryResult {
     pathHistory?: CapturedPath[];
 }
 
-// Global variable for the content script file path
 const CONTENT_SCRIPT_FILE = 'content.js';
 
-// Interaction types
 interface InteractionPayload {
 	url: string;
 	input?: string;
@@ -42,7 +39,6 @@ interface InteractionPayload {
 	timestamp?: string;
 }
 
-// --- Network capture using Chrome Debugger API ---
 let attachedTabId: number | null = null;
 
 function enableNetworkDebugger(tabId: number) {
@@ -104,11 +100,9 @@ chrome.debugger.onEvent.addListener((source, method, params) => {
 });
 
 /**
- * Sends a message to the content script and updates storage based on success.
- * Handles content script injection/retry if communication fails.
- * @param shouldStart - true to start capturing, false to stop.
- * @param tabId - The ID of the tab to communicate with.
- * @returns A promise resolving to a response object.
+ * @param shouldStart 
+ * @param tabId 
+ * @returns 
  */
 async function setCapturingState(shouldStart: boolean, tabId: number): Promise<ContentScriptResponse> {
     const message: SetCapturingMessage = {
@@ -117,7 +111,6 @@ async function setCapturingState(shouldStart: boolean, tabId: number): Promise<C
     };
 
     try {
-        // 1. Try sending the message directly
         const response: ContentScriptResponse = await chrome.tabs.sendMessage(tabId, message);
         
         if (response && response.success) {
@@ -126,25 +119,21 @@ async function setCapturingState(shouldStart: boolean, tabId: number): Promise<C
             if (shouldStart) enableNetworkDebugger(tabId); else disableNetworkDebugger();
             return { success: true };
         } else {
-            // Content script responded, but failed its internal logic
             await chrome.storage.local.set({ isCapturing: false });
             if (!shouldStart) disableNetworkDebugger();
             console.error("[Background] Content script responded, but failed:", response?.error);
             return { success: false, error: response?.error || "Content script failed to acknowledge SET_CAPTURING." };
         }
     } catch (e) {
-        // 2. Failed to communicate (Error: Could not establish connection. Receiving end does not exist.)
         console.warn(`[Background] Failed to communicate with tab ${tabId}. Attempting to inject content script...`);
 
         try {
-            // Inject the content script using the scripting API
             await chrome.scripting.executeScript({
                 target: { tabId: tabId },
                 files: [CONTENT_SCRIPT_FILE]
             });
             console.log(`[Background] Content script injected into tab ${tabId}. Retrying message.`);
             
-            // 3. Retry sending the message after injection
             const retryResponse: ContentScriptResponse = await chrome.tabs.sendMessage(tabId, message);
 
             if (retryResponse && retryResponse.success) {
@@ -160,7 +149,6 @@ async function setCapturingState(shouldStart: boolean, tabId: number): Promise<C
             }
 
         } catch (scriptingError) {
-            // 4. Scripting injection itself failed (e.g., restricted page like chrome://settings)
             const errorMsg = `[Background] Scripting injection failed for tab ${tabId}.`;
             console.error(errorMsg, scriptingError);
             await chrome.storage.local.set({ isCapturing: false });
@@ -171,7 +159,6 @@ async function setCapturingState(shouldStart: boolean, tabId: number): Promise<C
 }
 
 
-// --- Main Message Listener ---
 console.log("[Background Script] Service Worker started.");
 
 function downloadText(filename: string, text: string) {
@@ -186,11 +173,9 @@ function downloadText(filename: string, text: string) {
 chrome.runtime.onMessage.addListener(
 	(request: ToggleMessage | PathFoundMessage | { action: "interactionCaptured"; interaction: InteractionPayload }, sender, sendResponse) => {
     
-    // 1. Handle "toggleCapture" from the popup
     if (request.action === "toggleCapture") {
         const { shouldStart } = request as ToggleMessage;
 
-        // Find the currently active tab
         chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs.length === 0 || !tabs[0].id) {
                 console.error("[Background] No active tab found.");
@@ -200,7 +185,6 @@ chrome.runtime.onMessage.addListener(
 
             const tabId = tabs[0].id!; 
             
-            // Use the enhanced function to handle messaging and injection
             setCapturingState(shouldStart, tabId)
                 .then(sendResponse)
                 .catch(e => {
@@ -209,16 +193,14 @@ chrome.runtime.onMessage.addListener(
                 });
         });
         
-        // Return true to indicate an asynchronous response will be sent
         return true; 
     }
 
-    // 2. Handle "domPathFound" from the content script
     if (request.action === "domPathFound") {
       const data = request as PathFoundMessage;
       
-      const capturedData: CapturedPath = { // Use CapturedPath interface
-        path: data.path, // Uses 'path'
+      const capturedData: CapturedPath = { 
+        path: data.path, 
         url: data.url,
         timestamp: new Date().toISOString(),
         tabId: sender.tab?.id ?? 'N/A'
@@ -230,7 +212,6 @@ chrome.runtime.onMessage.addListener(
       console.log("Time:", capturedData.timestamp);
       console.groupEnd();
       
-      // Save latest capture data using key: 'latestPath'
       chrome.storage.local.set({ latestPath: capturedData }, () => {
         if (chrome.runtime.lastError) {
           console.error("Error setting latestPath:", chrome.runtime.lastError);
@@ -239,7 +220,6 @@ chrome.runtime.onMessage.addListener(
         }
       });
       
-      // Update history
       chrome.storage.local.get(['pathHistory'], (result: HistoryResult) => {
         const history = result.pathHistory || [];
         
@@ -259,7 +239,6 @@ chrome.runtime.onMessage.addListener(
       });
     }
 
-    // 3. Handle interaction captured events
     if (request.action === "interactionCaptured") {
         const { interaction } = request as { action: "interactionCaptured"; interaction: InteractionPayload };
         console.groupCollapsed("--- Interaction Captured ---");
@@ -271,16 +250,14 @@ chrome.runtime.onMessage.addListener(
             history.unshift(interaction);
             if (history.length > 50) history.pop();
             chrome.storage.local.set({ latestInteraction: interaction, interactionHistory: history }, () => {
-                // Save to output.txt in Downloads; overwrite on each capture
                 try {
                     const text = JSON.stringify(interaction, null, 2);
-                    downloadText('output.txt', text);
+                    // downloadText('output.txt', text);
                 } catch {}
             });
         });
     }
 
-    // Do not return true for synchronous/non-response handlers
     return false;
   }
 );
