@@ -6,22 +6,18 @@ export default defineConfig({
   build: {
     target: 'esnext',
     outDir: 'dist',
+    emptyOutDir: true, 
     rollupOptions: {
       input: {
         content: 'src/content.ts',
         background: 'src/background.ts',
-        popup: 'src/popup/popup.tsx'
+        popup: 'src/popup/popup.tsx' 
       },
       output: {
-        entryFileNames: assetInfo => {
-          const name = assetInfo.name || 'bundle'
-          if (name.includes('content')) return 'content.js'
-          if (name.includes('background')) return 'background.js'
-          if (name.includes('popup')) return 'popup.js'
-          return '[name].js'
-        }
-      }
+        entryFileNames: '[name].js', 
+        chunkFileNames: 'chunks/[name]-[hash].js' 
+      },
+      
     }
   }
 })
-

@@ -1,16 +1,18 @@
 {
   "manifest_version": 3,
-  "name": "Proof-of-Art (cDNA) Capture",
+  "name": "Proof-of-Art",
   "version": "0.1.0",
-  "description": "Capture prompts and edits from generative AI UIs and send to backend.",
+  "description": "Securely captures LLM interactions for cryptographic signing.",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "cDNA",
-    "default_popup": "popup.html"
+    "default_title": "Proof-of-Art",
+    "default_popup": "popup.html",
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png"
   },
   "content_scripts": [
     {
