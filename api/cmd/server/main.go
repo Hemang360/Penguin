@@ -118,11 +118,11 @@ func main() {
 	protected.POST("/import", api.ImportArt)
 	protected.POST("/verify/upload", api.UploadForVerification)
 
-	// Manifest upload endpoint (Pinata + Ethereum) - protected
-	protected.POST("/upload", api.UploadManifest)
-	protected.POST("/manifests", api.UploadManifest) // Alias for convenience
+	// Manifest upload endpoint (Pinata + Ethereum) - PUBLIC for hackathon testing
+	e.POST("/upload", api.UploadManifest)
+	e.POST("/manifests", api.UploadManifest) // Alias for convenience
 
-	addr := ":8787"
+	addr := ":8080"
 	log.Printf("🌐 API listening on %s", addr)
 	log.Println("📝 POST /upload - Upload manifest to Pinata and store CID on Ethereum")
 	log.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")

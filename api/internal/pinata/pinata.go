@@ -56,6 +56,115 @@ func (c *Client) Enabled() bool {
 	return c.enabled
 }
 
+// UploadFileSimple uploads a file to Pinata IPFS without complex metadata (simplified version)
+func (c *Client) UploadFileSimple(data []byte, filename string) (string, error) {
+	if !c.enabled {
+		return "", fmt.Errorf("pinata client not configured")
+	}
+
+	url := "https://api.pinata.cloud/pinning/pinFileToIPFS"
+
+	// Create multipart form
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add file part
+	if filename == "" {
+		filename = fmt.Sprintf("file-%d", time.Now().Unix())
+	}
+
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		return "", fmt.Errorf("failed to create form file: %w", err)
+	}
+	if _, err := part.Write(data); err != nil {
+		return "", fmt.Errorf("failed to write file data: %w", err)
+	}
+
+	// Add simple metadata
+	pinataMetadata := PinataMetadata{
+		Name: filename,
+		KeyValues: map[string]string{
+			"uploaded_at": time.Now().Format(time.RFC3339),
+		},
+	}
+
+	metadataJSON, err := json.Marshal(pinataMetadata)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	metadataPart, err := writer.CreateFormField("pinataMetadata")
+	if err != nil {
+		return "", fmt.Errorf("failed to create metadata field: %w", err)
+	}
+	if _, err := metadataPart.Write(metadataJSON); err != nil {
+		return "", fmt.Errorf("failed to write metadata: %w", err)
+	}
+
+	// Add pinataOptions
+	pinataOptions := PinataOptions{
+		CidVersion: 1,
+	}
+	optionsJSON, err := json.Marshal(pinataOptions)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal options: %w", err)
+	}
+
+	optionsPart, err := writer.CreateFormField("pinataOptions")
+	if err != nil {
+		return "", fmt.Errorf("failed to create options field: %w", err)
+	}
+	if _, err := optionsPart.Write(optionsJSON); err != nil {
+		return "", fmt.Errorf("failed to write options: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	// Create request
+	req, err := http.NewRequest("POST", url, body)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("pinata_api_key", c.apiKey)
+	req.Header.Set("pinata_secret_api_key", c.apiSecret)
+
+	// Execute request
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("pinata request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("pinata upload failed (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse response to get IPFS hash
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	ipfsHash, ok := result["IpfsHash"].(string)
+	if !ok {
+		return "", fmt.Errorf("IpfsHash not found in response")
+	}
+
+	return ipfsHash, nil
+}
+
 // UploadFile uploads a file to Pinata IPFS with metadata
 // metadata parameter uses interface{} to avoid circular dependency with ipfsdb
 func (c *Client) UploadFile(data []byte, metadata interface{}) (string, error) {

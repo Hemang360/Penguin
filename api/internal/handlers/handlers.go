@@ -856,47 +856,100 @@ func (h *Handlers) Verify(c echo.Context) error {
 	})
 }
 
-// UploadManifest handles POST /upload - uploads manifest to Pinata and stores CID on Ethereum
+// UploadManifest handles POST /upload - uploads image (if provided) and manifest to Pinata, then stores manifest CID on Ethereum
+// Supports both JSON (with image_cid) and multipart form (with image file)
+// PUBLIC endpoint for hackathon testing (no authentication required)
 func (h *Handler) UploadManifest(c echo.Context) error {
-	ctx, cancel := context.WithTimeout(c.Request().Context(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 120*time.Second)
 	defer cancel()
 
-	// Get authenticated user from context
-	user, ok := auth.GetDBUserFromContext(c)
-	if !ok {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not authenticated"})
+	pinataClient := pinata.NewFromEnv()
+	if !pinataClient.Enabled() {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Pinata not configured. Please set PINATA_API_KEY and PINATA_API_SECRET"})
 	}
 
-	// Validate user has a wallet address set
-	if user.WalletAddress == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "wallet address not set. Please update your profile with a wallet address.",
-		})
+	var imageCID string
+	var err error
+
+	// Step 1: Handle image upload (if provided as file)
+	imageFile, err := c.FormFile("image")
+	if err == nil && imageFile != nil {
+		// Image file provided - upload to Pinata first
+		src, err := imageFile.Open()
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to open image file: " + err.Error()})
+		}
+		defer src.Close()
+
+		imageData, err := io.ReadAll(src)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read image file: " + err.Error()})
+		}
+
+		log.Printf("📤 Uploading image to Pinata (size: %d bytes, filename: %s)...", len(imageData), imageFile.Filename)
+		imageCID, err = pinataClient.UploadFileSimple(imageData, imageFile.Filename)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to upload image to Pinata: " + err.Error()})
+		}
+		log.Printf("✅ Image uploaded to Pinata: CID=%s", imageCID)
+	} else {
+		// No image file - get image_cid from form or will get from JSON below
+		imageCID = c.FormValue("image_cid")
 	}
 
+	// Step 2: Get manifest metadata from request
 	var req struct {
-		ImageCID    string            `json:"image_cid"`
-		Prompt      string            `json:"prompt"`
-		Model       string            `json:"model"`
-		Origin      string            `json:"origin"`
-		Timestamp   int64             `json:"timestamp"`
-		DerivedFrom *string           `json:"derived_from,omitempty"`
-		Metadata    map[string]string `json:"metadata,omitempty"`
+		ImageCID    string            `json:"image_cid" form:"image_cid"`
+		Creator     string            `json:"creator" form:"creator"`
+		Prompt      string            `json:"prompt" form:"prompt"`
+		Model       string            `json:"model" form:"model"`
+		Origin      string            `json:"origin" form:"origin"`
+		Timestamp   int64             `json:"timestamp" form:"timestamp"`
+		DerivedFrom *string           `json:"derived_from,omitempty" form:"derived_from"`
+		Metadata    map[string]string `json:"metadata,omitempty" form:"metadata"`
 	}
 
+	// Try to get creator from authenticated user first (if available)
+	var creator string
+	user, ok := auth.GetDBUserFromContext(c)
+	if ok && user.WalletAddress != "" {
+		creator = user.WalletAddress
+		log.Printf("ℹ️  Using authenticated user's wallet: %s", creator)
+	}
+
+	// Bind from JSON or form (single bind operation)
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request: " + err.Error()})
 	}
 
-	// Validate required fields
-	if req.ImageCID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "image_cid is required"})
+	// If image_cid was not provided as file, use from request
+	if imageCID == "" {
+		imageCID = req.ImageCID
+		if imageCID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "image file or image_cid is required"})
+		}
+		log.Printf("ℹ️  Using provided image CID: %s", imageCID)
 	}
 
-	// Create manifest JSON - use authenticated user's wallet address
+	// Set default timestamp if not provided
+	if req.Timestamp == 0 {
+		req.Timestamp = time.Now().Unix()
+	}
+
+	// Use creator from request if not from authenticated user
+	if creator == "" {
+		creator = req.Creator
+	}
+
+	// Validate required fields
+	if creator == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "creator (wallet address) is required"})
+	}
+
+	// Step 3: Create manifest JSON with image CID
 	manifest := map[string]interface{}{
-		"image_cid":  req.ImageCID,
-		"creator":    user.WalletAddress, // Use authenticated user's wallet address
+		"image_cid":  imageCID,
+		"creator":    creator,
 		"prompt":     req.Prompt,
 		"model":      req.Model,
 		"origin":     req.Origin,
@@ -912,12 +965,8 @@ func (h *Handler) UploadManifest(c echo.Context) error {
 		manifest["metadata"] = req.Metadata
 	}
 
-	// Pin manifest to Pinata
-	pinataClient := pinata.NewFromEnv()
-	if !pinataClient.Enabled() {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Pinata not configured. Please set PINATA_API_KEY and PINATA_API_SECRET"})
-	}
-
+	// Step 4: Pin manifest to Pinata
+	log.Printf("📤 Uploading manifest to Pinata...")
 	cid, err := pinataClient.PinJSONManifest(manifest)
 	if err != nil {
 		c.Logger().Errorf("failed to pin JSON manifest: %v", err) // Added logging
@@ -926,19 +975,20 @@ func (h *Handler) UploadManifest(c echo.Context) error {
 
 	log.Printf("✅ Manifest pinned to Pinata: CID=%s", cid)
 
-	// Get Ethereum configuration from environment
+	// Step 5: Store manifest CID on Ethereum
 	rpcURL := os.Getenv("RPC_URL")
 	privateKey := os.Getenv("PRIVATE_KEY")
 	contractAddress := os.Getenv("CONTRACT_ADDRESS")
 
 	if rpcURL == "" || privateKey == "" || contractAddress == "" {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
+		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
 			"error": "Ethereum not configured. Please set RPC_URL, PRIVATE_KEY, and CONTRACT_ADDRESS in .env",
 			"cid":   cid,
+			"image_cid": imageCID,
 		})
 	}
 
-	// Store CID on Ethereum
+	log.Printf("📤 Storing manifest CID on Ethereum Sepolia...")
 	txHash, err := eth.StoreManifest(ctx, rpcURL, privateKey, contractAddress, cid)
 	if err != nil {
 		// Return CID even if Ethereum transaction fails
@@ -953,6 +1003,7 @@ func (h *Handler) UploadManifest(c echo.Context) error {
 	log.Printf("✅ Manifest stored on Ethereum: TX=%s", txHash)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
+		"image_cid": imageCID,
 		"cid":       cid,
 		"txHash":    txHash,
 		"etherscan": etherscanURL,
