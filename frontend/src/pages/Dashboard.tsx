@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Upload, Image, FileText, Music, CheckCircle, AlertCircle } from 'lucide-react';
 import { generateArt, importArt, getCertificate } from '../lib/api';
+import Topbar from '../components/Topbar';
 
 interface Artwork {
   id: string;
@@ -137,13 +138,14 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white">
-      <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-black text-gray-100">
+      <Topbar />
+      <div className="max-w-6xl mx-auto px-4 py-10">
         <header className="mb-12">
-          <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-pink-500 to-cyan-500 bg-clip-text text-transparent">
+          <h1 className="text-4xl md:text-5xl font-bold mb-3 bg-gradient-to-r from-fuchsia-500 to-cyan-500 bg-clip-text text-transparent">
             Proof-of-Art Studio
           </h1>
-          <p className="text-xl text-gray-300">Create verifiable AI-generated art with blockchain certification</p>
+          <p className="text-base md:text-lg text-gray-400">Create verifiable AI-generated art with blockchain certification</p>
           <div className="mt-4 flex items-center space-x-2">
             <CheckCircle className="text-green-400" size={20} />
             <span className="text-sm text-gray-400">Wallet: {userWallet.substring(0, 10)}...{userWallet.substring(userWallet.length - 8)}</span>
@@ -152,7 +154,7 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Creation Panel */}
-          <div className="lg:col-span-1 bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
+          <div className="lg:col-span-1 rounded-2xl p-6 border border-neutral-800 bg-neutral-900">
             <h2 className="text-2xl font-bold mb-6">Create New Art</h2>
             
             <div className="space-y-4">
@@ -161,7 +163,7 @@ export default function Dashboard() {
                 <select 
                   value={contentType}
                   onChange={(e) => setContentType(e.target.value)}
-                  className="w-full bg-white/20 rounded-lg px-4 py-2 border border-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  className="w-full bg-neutral-800 rounded-lg px-4 py-2 border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 >
                   <option value="image">Image</option>
                   <option value="text">Text</option>
@@ -177,7 +179,7 @@ export default function Dashboard() {
                     setProvider(e.target.value);
                     setModel('');
                   }}
-                  className="w-full bg-white/20 rounded-lg px-4 py-2 border border-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  className="w-full bg-neutral-800 rounded-lg px-4 py-2 border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 >
                   <option value="openai">OpenAI</option>
                   <option value="vertex">Google Vertex / Gemini</option>
@@ -192,7 +194,7 @@ export default function Dashboard() {
                 <select
                   value={model}
                   onChange={(e) => setModel(e.target.value)}
-                  className="w-full bg-white/20 rounded-lg px-4 py-2 border border-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  className="w-full bg-neutral-800 rounded-lg px-4 py-2 border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 >
                   {provider === 'openai' && contentType === 'image' && (
                     <>
@@ -237,7 +239,7 @@ export default function Dashboard() {
                   <select
                     value={imageSize}
                     onChange={(e) => setImageSize(e.target.value)}
-                    className="w-full bg-white/20 rounded-lg px-4 py-2 border border-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                    className="w-full bg-neutral-800 rounded-lg px-4 py-2 border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                   >
                     <option value="512x512">512x512</option>
                     <option value="768x768">768x768</option>
@@ -252,14 +254,14 @@ export default function Dashboard() {
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
                   placeholder="Enter your creative prompt..."
-                  className="w-full bg-white/20 rounded-lg px-4 py-3 border border-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-500 min-h-[120px]"
+                  className="w-full bg-neutral-800 rounded-lg px-4 py-3 border border-neutral-700 focus:outline-none focus:ring-2 focus:ring-cyan-500 min-h-[120px]"
                 />
               </div>
 
               <button
                 onClick={handleGenerate}
                 disabled={loading}
-                className="w-full bg-gradient-to-r from-pink-500 to-cyan-500 hover:from-pink-600 hover:to-cyan-600 text-white font-bold py-3 px-6 rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                className="w-full bg-gradient-to-r from-fuchsia-500 to-cyan-500 hover:from-fuchsia-600 hover:to-cyan-600 text-white font-medium py-3 px-6 rounded-lg transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
               >
                 {loading ? (
                   <>
@@ -276,16 +278,16 @@ export default function Dashboard() {
 
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-white/30"></div>
+                  <div className="w-full border-t border-neutral-800"></div>
                 </div>
                 <div className="relative flex justify-center text-sm">
-                  <span className="px-2 bg-transparent text-gray-400">or</span>
+                  <span className="px-2 bg-transparent text-gray-500">or</span>
                 </div>
               </div>
 
-              <label className="w-full bg-white/10 hover:bg-white/20 border-2 border-dashed border-white/30 rounded-lg py-8 flex flex-col items-center justify-center cursor-pointer transition-all">
-                <Upload size={32} className="mb-2 text-gray-400" />
-                <span className="text-sm text-gray-400">Import existing artwork</span>
+              <label className="w-full hover:bg-neutral-800/70 border-2 border-dashed border-neutral-700 rounded-lg py-8 flex flex-col items-center justify-center cursor-pointer transition-all">
+                <Upload size={32} className="mb-2 text-gray-500" />
+                <span className="text-sm text-gray-500">Import existing artwork</span>
                 <input
                   type="file"
                   accept="image/*,audio/*"
@@ -302,38 +304,38 @@ export default function Dashboard() {
 
           {/* Gallery */}
           <div className="lg:col-span-2">
-            <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
+            <div className="rounded-2xl p-6 border border-neutral-800 bg-neutral-900">
               <h2 className="text-2xl font-bold mb-6">Your Certified Artworks</h2>
               
               {artworks.length === 0 ? (
                 <div className="text-center py-16">
-                  <AlertCircle size={48} className="mx-auto mb-4 text-gray-500" />
-                  <p className="text-gray-400">No artworks yet. Create your first certified masterpiece!</p>
+                  <AlertCircle size={48} className="mx-auto mb-4 text-gray-600" />
+                  <p className="text-gray-500">No artworks yet. Create your first certified masterpiece!</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {artworks.map((artwork) => (
-                    <div key={artwork.id} className="bg-white/10 rounded-xl p-4 border border-white/20 hover:border-cyan-500 transition-all">
-                      <div className="aspect-square bg-gradient-to-br from-purple-500/20 to-cyan-500/20 rounded-lg mb-4 flex items-center justify-center">
+                    <div key={artwork.id} className="rounded-xl p-4 border border-neutral-800 hover:border-cyan-600 transition-all bg-neutral-900">
+                      <div className="aspect-square bg-gradient-to-br from-fuchsia-500/10 to-cyan-500/10 rounded-lg mb-4 flex items-center justify-center">
                         {artwork.contentType === 'image' ? (
-                          <Image size={64} className="text-white/40" />
+                          <Image size={64} className="text-white/30" />
                         ) : artwork.contentType === 'text' ? (
-                          <FileText size={64} className="text-white/40" />
+                          <FileText size={64} className="text-white/30" />
                         ) : (
-                          <Music size={64} className="text-white/40" />
+                          <Music size={64} className="text-white/30" />
                         )}
                       </div>
                       
                       <h3 className="font-semibold mb-2 truncate">{artwork.title}</h3>
-                      <p className="text-sm text-gray-400 mb-3 truncate">{artwork.prompt}</p>
+                      <p className="text-sm text-gray-500 mb-3 truncate">{artwork.prompt}</p>
                       
                       <div className="space-y-2">
                         <div className="flex items-center justify-between text-xs">
-                          <span className="text-gray-500">IPFS:</span>
+                          <span className="text-gray-600">IPFS:</span>
                           <span className="text-cyan-400 truncate ml-2">{artwork.ipfsHash.substring(0, 12)}...</span>
                         </div>
                         <div className="flex items-center justify-between text-xs">
-                          <span className="text-gray-500">Blockchain:</span>
+                          <span className="text-gray-600">Blockchain:</span>
                           <span className="text-green-400 truncate ml-2">{artwork.blockchainTxHash.substring(0, 12)}...</span>
                         </div>
                       </div>
@@ -345,7 +347,7 @@ export default function Dashboard() {
                         >
                           Download Certificate
                         </button>
-                        <button className="bg-white/10 hover:bg-white/20 text-white text-sm py-2 px-4 rounded-lg transition-all">
+                        <button className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm py-2 px-4 rounded-lg transition-all">
                           View
                         </button>
                       </div>
