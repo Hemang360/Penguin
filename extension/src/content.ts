@@ -122,14 +122,38 @@ function getDeepText(root: Element): string {
 	return text.trim();
 }
 
+function cleanText(raw: string | null | undefined): string | null {
+	if (!raw) return null;
+	// Collapse whitespace and strip zero-width characters
+	const normalized = raw
+		.replace(/[\u200B-\u200D\uFEFF]/g, '')
+		.replace(/\s+/g, ' ')
+		.replace(/\s*\n\s*/g, '\n')
+		.trim();
+	return normalized || null;
+}
+
 function extractLatestUserPrompt(provider: Provider): string | null {
 	switch (provider) {
 		case "chatgpt": {
-			// Prefer last user message bubble; fallback to textarea value
-			const lastUserMsg = Array.from(document.querySelectorAll('[data-message-author-role="user"], [data-testid="user-message"]')).pop() as HTMLElement | undefined;
-			if (lastUserMsg) return lastUserMsg.innerText.trim() || lastUserMsg.textContent?.trim() || null;
-			const ta = document.querySelector('textarea');
-			return (ta as HTMLTextAreaElement | null)?.value?.trim() || null;
+			// Prefer explicit markdown within the last user turn
+			const turn = Array.from(document.querySelectorAll('[data-testid="conversation-turn-user"]')).pop() as HTMLElement | undefined;
+			if (turn) {
+				const md = Array.from(turn.querySelectorAll('[data-testid="markdown"], .markdown, .prose, p')) as HTMLElement[];
+				for (let i = md.length - 1; i >= 0; i--) {
+					const txt = cleanText(md[i].innerText || md[i].textContent);
+					if (txt) return txt;
+				}
+				const fallback = cleanText(turn.innerText || turn.textContent);
+				if (fallback) return fallback;
+			}
+			// Secondary: any user message markdown
+			const anyUser = Array.from(document.querySelectorAll('[data-message-author-role="user"] [data-testid="markdown"], [data-testid="user-message"] [data-testid="markdown"], [data-message-author-role="user"] .markdown')) as HTMLElement[];
+			const lastMd = anyUser.pop();
+			if (lastMd) return cleanText(lastMd.innerText || lastMd.textContent);
+			// Fallback to current textbox
+			const ta = document.querySelector('[data-testid="prompt-textarea"], textarea, [role="textbox"][contenteditable="true"], [contenteditable="true"][data-testid="textbox"]');
+			return cleanText(((ta as HTMLTextAreaElement | null)?.value || (ta as HTMLElement | null)?.innerText));
 		}
 		case "claude": {
 			const lastUserMsg = Array.from(document.querySelectorAll('[data-cy="message"][data-author="user"], [data-testid="user-message"]')).pop() as HTMLElement | undefined;
@@ -173,9 +197,14 @@ function extractLatestUserPrompt(provider: Provider): string | null {
 function extractLatestAssistantOutput(provider: Provider): string | null {
 	switch (provider) {
 		case "chatgpt": {
-			const lastAssistant = Array.from(document.querySelectorAll('[data-message-author-role="assistant"], [data-testid="assistant-message"], .markdown'))
+			// Prefer assistant markdown content
+			const md = Array.from(document.querySelectorAll('[data-message-author-role="assistant"] [data-testid="markdown"], [data-testid="assistant-message"] [data-testid="markdown"], [data-message-author-role="assistant"] .markdown')) as HTMLElement[];
+			const last = md.pop();
+			if (last) return cleanText(last.innerText || last.textContent);
+			// Fallback to assistant turn container
+			const container = Array.from(document.querySelectorAll('[data-message-author-role="assistant"], [data-testid="assistant-message"]'))
 				.pop() as HTMLElement | undefined;
-			return lastAssistant?.innerText?.trim() || lastAssistant?.textContent?.trim() || null;
+			return cleanText(container?.innerText || container?.textContent);
 		}
 		case "claude": {
 			const lastAssistant = Array.from(document.querySelectorAll('[data-cy="message"][data-author="assistant"], [data-testid="assistant-message"], .message .prose, .message .content'))
@@ -222,12 +251,14 @@ function getLatestAssistantContext(provider: Provider): { text: string | null; c
 			const deep = getDeepText(node);
 			if (deep) return { text: deep, container: node };
 		}
-		return { text: null, container: null };
+		// If no text nodes (e.g., pure image response), still return the latest container
+		const last = nodes[nodes.length - 1] || null;
+		return { text: last ? '' : null, container: last };
 	};
 
 	switch (provider) {
 		case "chatgpt":
-			return pick(Array.from(document.querySelectorAll('[data-message-author-role="assistant"], [data-testid="assistant-message"], .markdown')) as HTMLElement[]);
+			return pick(Array.from(document.querySelectorAll('[data-message-author-role="assistant"], [data-testid="assistant-message"], [data-testid*="assistant-turn"], .markdown, figure')) as HTMLElement[]);
 		case "claude":
 			return pick(Array.from(document.querySelectorAll('[data-cy="message"][data-author="assistant"], [data-testid="assistant-message"], .message .prose, .message .content')) as HTMLElement[]);
 		case "gemini":
@@ -248,7 +279,7 @@ interface Attachment {
 	filename?: string;
 }
 
-async function toDataUrlIfSmall(url: string, maxBytes = 2_000_000): Promise<{ dataUrl?: string; mime?: string }>{
+async function toDataUrlIfSmall(url: string, maxBytes = 6_000_000): Promise<{ dataUrl?: string; mime?: string }>{
 	try {
 		if (url.startsWith('data:')) return { dataUrl: url, mime: url.substring(5, url.indexOf(';')) };
 		const res = await fetch(url, { credentials: 'omit' });
@@ -302,13 +333,13 @@ async function collectAttachmentsFrom(container: HTMLElement | null): Promise<At
 		}
 	}
 
-	// Merge with recentAssets captured by background debugger
+	// Merge with recentAssets captured by background debugger (only for true media types)
 	try {
 		chrome.storage.local.get(['recentAssets'], (res) => {
 			const recent: { url: string; mime?: string; base64?: string }[] = Array.isArray(res.recentAssets) ? res.recentAssets : [];
 			for (const att of attachments) {
 				if (!att.dataUrl) {
-					const match = recent.find(x => x.url === att.url && x.base64);
+					const match = recent.find(x => x.url === att.url && x.base64 && x.mime && (x.mime.startsWith('image/') || x.mime.startsWith('video/') || x.mime.startsWith('audio/') || x.mime === 'application/pdf'));
 					if (match && match.base64) {
 						att.dataUrl = `data:${match.mime || ''};base64,${match.base64}`;
 						att.mime = match.mime || att.mime;
@@ -318,7 +349,17 @@ async function collectAttachmentsFrom(container: HTMLElement | null): Promise<At
 		});
 	} catch {}
 
-	return attachments;
+	// Deduplicate by URL+MIME
+	const seen = new Set<string>();
+	const unique: Attachment[] = [];
+	for (const a of attachments) {
+		const key = `${a.url}|${a.mime || ''}|${a.type}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		unique.push(a);
+	}
+
+	return unique;
 }
 
 let observer: MutationObserver | null = null;
