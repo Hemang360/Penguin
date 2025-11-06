@@ -9,6 +9,16 @@ interface CapturedPath {
     timestamp: string;
 }
 
+interface StorageData {
+    isCapturing?: boolean; 
+    latestPath?: CapturedPath;
+}
+
+interface ToggleResponse {
+    success: boolean;
+    error?: string;
+}
+
 interface ExtensionState {
     isCapturing: boolean;
     statusMessage: string;
@@ -18,91 +28,113 @@ interface ExtensionState {
 
 const style = `
   :root {
-    --purple-main: #673AB7; 
-    --purple-light: #9575CD;
-    --text-color: #333333;
-    --bg-color: #F8F4FF;
+    --purple-dark: #4A148C; /* Deep Purple */
+    --purple-main: #673AB7; /* Main Purple */
+    --purple-light: #B39DDB; /* Light Purple */
+    --text-color-dark: #333333;
+    --text-color-light: #FFFFFF;
     --success-color: #4CAF50;
     --danger-color: #F44336;
     --info-color: #3F51B5;
-    --font-stack: 'Inter', 'Segoe UI', 'Roboto', 'Helvetica Neue', sans-serif;
+    --font-stack: 'Inter', sans-serif;
   }
   
   body {
     font-family: var(--font-stack);
-    width: 300px;
-    padding: 15px;
-    background-color: var(--bg-color);
-    color: var(--text-color);
+    width: 380px; /* Bigger size */
+    padding: 20px;
+    /* Gradient Background: Dark to Light Purple */
+    background: linear-gradient(135deg, var(--purple-dark) 0%, var(--purple-main) 60%, var(--purple-light) 100%);
+    color: var(--text-color-light); /* White text color for the background */
+    border-radius: 12px; /* Rounded borders */
+    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
   }
   
   h2 {
-    color: var(--purple-main);
+    color: var(--text-color-light); 
     border-bottom: 2px solid var(--purple-light);
-    padding-bottom: 5px;
+    padding-bottom: 8px;
     margin-top: 0;
     font-weight: 700;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.3);
+    text-align: center;
   }
   
   button {
-    padding: 10px;
+    padding: 12px;
     border: none;
     border-radius: 8px; 
     cursor: pointer;
     font-weight: bold;
     transition: all 0.2s ease-in-out;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   }
   
   button:hover:not(:disabled) {
-    opacity: 0.9;
-    transform: translateY(-1px);
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.15);
+    opacity: 0.95;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 8px rgba(0, 0, 0, 0.18);
   }
 
   #start-button {
     background-color: var(--success-color);
     color: white;
+    background-image: linear-gradient(to bottom right, #66BB6A, var(--success-color));
   }
   
   #stop-button {
     background-color: var(--danger-color);
     color: white;
+    background-image: linear-gradient(to bottom right, #E57373, var(--danger-color));
   }
   
   button:disabled {
     background-color: #CCCCCC;
+    color: #666;
     cursor: not-allowed;
     box-shadow: none;
     transform: none;
+    background-image: none;
   }
 
   .status-area {
-    padding: 12px;
-    margin-top: 15px;
-    border-radius: 8px;
-    background-color: white;
-    border: 1px solid var(--purple-light);
+    padding: 15px;
+    margin-top: 20px;
+    border-radius: 12px;
+    background-color: rgba(255, 255, 255, 0.95);
+    color: var(--text-color-dark);
     text-align: left;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
   }
 
   .dynamic-text {
     font-size: 0.9em;
-    color: #666;
+    color: var(--purple-dark);
     margin-top: 5px;
+    font-weight: 500;
+  }
+
+  .path-display-container {
+      margin-top: 15px;
+  }
+
+  .path-display-container p {
+      color: white;
+      font-weight: 600;
   }
 
   .path-display {
     margin-top: 5px;
-    padding: 10px;
-    background-color: #f1f1f1;
-    border-radius: 4px;
+    padding: 12px;
+    background-color: rgba(255, 255, 255, 0.95);
+    border-radius: 8px;
     font-family: monospace;
-    font-size: 0.8em;
+    font-size: 0.85em;
     word-break: break-all;
     display: block;
     min-height: 20px;
+    color: var(--text-color-dark);
+    box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
   }
 
   .button-group {
@@ -112,21 +144,32 @@ const style = `
   }
 
   .button-group button {
-    width: 48%;
+    width: 49%;
   }
 
   .copy-button {
     background-color: var(--info-color) !important;
     color: white;
     width: 100%;
-    margin-top: 8px;
+    margin-top: 12px;
+    background-image: linear-gradient(to bottom right, #7986CB, var(--info-color));
+  }
+
+  .storage-info {
+      margin-top: 20px;
+      font-size: 0.8em;
+      color: #f0f0f0;
+      text-align: center;
+      padding: 8px;
+      background-color: rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
   }
 `;
 
 const App: React.FC = () => {
     const getStatusDetails = (isCapturing: boolean, latestPath: string) => ({
         statusMessage: isCapturing ? "Monitoring Active 🟢" : "Monitoring Stopped 🛑",
-        dynamicDetail: isCapturing ? "Click on the page to capture a DOM path." : "Click Start to begin monitoring clicks.",
+        dynamicDetail: isCapturing ? "Click anywhere on the page to capture its DOM path." : "Click Start to begin monitoring clicks.",
         latestPath: latestPath 
     });
 
@@ -144,7 +187,7 @@ const App: React.FC = () => {
             return;
         }
 
-        chrome.storage.local.get(['isCapturing', 'latestPath'], (result: any) => {
+        chrome.storage.local.get(['isCapturing', 'latestPath'], (result: StorageData) => {
             const initialCapturing = result.isCapturing || false;
             const pathText = result.latestPath?.path || "No path captured.";
             
@@ -155,14 +198,14 @@ const App: React.FC = () => {
             }));
         });
         
-        const pathListener = (changes: any, namespace: string) => {
+        const pathListener = (changes: { [key: string]: chrome.storage.StorageChange }, namespace: string) => {
             if (namespace !== 'local') return;
 
             setState(s => {
                 let newState = { ...s };
 
                 if (changes.isCapturing) {
-                    const newCapturingState = changes.isCapturing.newValue;
+                    const newCapturingState = changes.isCapturing.newValue as boolean;
                     newState.isCapturing = newCapturingState;
                     const details = getStatusDetails(newCapturingState, newState.latestPath);
                     newState.statusMessage = details.statusMessage;
@@ -170,7 +213,7 @@ const App: React.FC = () => {
                 }
 
                 if (changes.latestPath) {
-                    const newPath: CapturedPath = changes.latestPath.newValue;
+                    const newPath: CapturedPath = changes.latestPath.newValue as CapturedPath;
                     newState.latestPath = newPath.path;
                     if (newState.isCapturing) {
                         newState.dynamicDetail = `New path captured from: ${newPath.url.substring(0, 40)}...`;
@@ -200,16 +243,18 @@ const App: React.FC = () => {
         chrome.runtime.sendMessage({
             action: "toggleCapture",
             shouldStart: shouldStart
-        }, (response: any) => {
+        }, (response: ToggleResponse) => {
             if (!response || !response.success) {
                 console.error("Toggle failed:", chrome.runtime.lastError || (response && response.error));
-                chrome.storage.local.get('isCapturing', (result: { isCapturing: boolean; }) => {
+                chrome.storage.local.get('isCapturing', (result: { isCapturing?: boolean; latestPath?: CapturedPath }) => {
                     const errorDetail = response?.error || "Check console for errors. State reverted.";
+                    const pathText = result.latestPath?.path || "No path captured.";
                     setState(prev => ({ 
                         ...prev, 
                         isCapturing: result.isCapturing || false,
                         statusMessage: "Action Failed 🔴", 
-                        dynamicDetail: errorDetail
+                        dynamicDetail: errorDetail,
+                        latestPath: pathText
                     }));
                 });
             }
@@ -226,7 +271,7 @@ const App: React.FC = () => {
             
             let success = false;
             try {
-                success = document.execCommand('copy');
+                success = document.execCommand('copy'); 
             } catch (err) {
                 console.error('Copy failed using execCommand:', err);
             }
@@ -249,7 +294,7 @@ const App: React.FC = () => {
     return (
         <>
             <style>{style}</style>
-            <h2>DOM Path Capture</h2>
+            <h2>DOM Path Click Monitor</h2>
             <div className="button-group">
                 <button 
                     id="start-button" 
@@ -273,7 +318,7 @@ const App: React.FC = () => {
             </div>
 
             <div className="path-display-container">
-                <p style={{marginTop: '15px'}}><strong>Last Captured Path:</strong></p>
+                <p style={{marginTop: '15px'}}>Last Clicked Path:</p>
                 <code className="path-display">
                     {state.latestPath}
                 </code>

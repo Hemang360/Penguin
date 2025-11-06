@@ -3,7 +3,7 @@
   "name": "Proof-of-Art",
   "version": "0.1.0",
   "description": "Securely captures LLM interactions for cryptographic signing.",
-  "permissions": ["storage", "activeTab", "scripting"],
+  "permissions": ["storage", "activeTab", "scripting", "debugger", "downloads"],
   "host_permissions": ["<all_urls>"],
   "background": {
     "service_worker": "background.js"
