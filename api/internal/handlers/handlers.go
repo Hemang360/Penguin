@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	_ "golang.org/x/image/webp"
 
 	"yourproject/internal/crypto"
 	"yourproject/internal/eth"
@@ -84,12 +85,14 @@ func (h *Handler) GenerateArt(c echo.Context) error {
 	// Call model provider API with temperature=0 for reproducibility
 	artworkData, err := h.callLLMAPI(req.LLMProvider, req.Prompt, req.ContentType, req.Parameters)
 	if err != nil {
+		c.Logger().Errorf("failed to call LLM API: %v", err) // Added logging
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Process and watermark the artwork
 	artwork, certificate, err := h.processArtwork(c.Request().Context(), req.UserID, req.Prompt, artworkData, req.ContentType, req.LLMProvider)
 	if err != nil {
+		c.Logger().Errorf("failed to process artwork in GenerateArt: %v", err) // Added logging
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
@@ -116,6 +119,7 @@ func (h *Handler) ImportArt(c echo.Context) error {
 		req.SourcePlatform,
 	)
 	if err != nil {
+		c.Logger().Errorf("failed to process artwork: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
@@ -192,6 +196,7 @@ func (h *Handler) processArtwork(ctx context.Context, userID, prompt string, art
 		NoiseSignature: noisePattern.Signature,
 		Timestamp:      time.Now(),
 		Metadata: map[string]string{
+			"name":          fmt.Sprintf("Artwork-%s", artworkID),
 			"provider":      provider,
 			"content_type":  contentType,
 			"original_hash": originalHash,
@@ -865,6 +870,7 @@ func (h *Handler) UploadManifest(c echo.Context) error {
 
 	cid, err := pinataClient.PinJSONManifest(manifest)
 	if err != nil {
+		c.Logger().Errorf("failed to pin JSON manifest: %v", err) // Added logging
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to pin manifest to Pinata: " + err.Error()})
 	}
 
