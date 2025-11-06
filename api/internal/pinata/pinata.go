@@ -2,6 +2,7 @@ package pinata
 
 import (
     "bytes"
+    "encoding/json"
     "fmt"
     "io"
     "mime/multipart"
@@ -87,6 +88,65 @@ func (c *Client) UploadBytes(data []byte, filename string) (string, error) {
     }
     cid := s[start:end]
     return cid, nil
+}
+
+// PinJSONManifest pins a JSON manifest to Pinata and returns the CID
+func (c *Client) PinJSONManifest(manifest interface{}) (string, error) {
+    if !c.Enabled() {
+        return "", fmt.Errorf("pinata not configured")
+    }
+
+    // Marshal manifest to JSON
+    jsonData, err := json.Marshal(manifest)
+    if err != nil {
+        return "", fmt.Errorf("failed to marshal manifest: %w", err)
+    }
+
+    // Create request body
+    reqBody := bytes.NewBuffer(jsonData)
+
+    // Create HTTP request
+    req, err := http.NewRequest("POST", "https://api.pinata.cloud/pinning/pinJSONToIPFS", reqBody)
+    if err != nil {
+        return "", fmt.Errorf("failed to create request: %w", err)
+    }
+
+    req.Header.Set("Content-Type", "application/json")
+    if c.authJWT != "" {
+        req.Header.Set("Authorization", "Bearer "+c.authJWT)
+    } else {
+        req.Header.Set("pinata_api_key", c.apiKey)
+        req.Header.Set("pinata_secret_api_key", c.apiSecret)
+    }
+
+    // Send request
+    resp, err := c.httpClient.Do(req)
+    if err != nil {
+        return "", fmt.Errorf("failed to send request: %w", err)
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+        body, _ := io.ReadAll(resp.Body)
+        return "", fmt.Errorf("pinata upload failed (status %d): %s", resp.StatusCode, string(body))
+    }
+
+    // Parse response
+    var result struct {
+        IpfsHash string `json:"IpfsHash"`
+        PinSize  int64  `json:"PinSize"`
+        Timestamp string `json:"Timestamp"`
+    }
+
+    if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+        return "", fmt.Errorf("failed to parse response: %w", err)
+    }
+
+    if result.IpfsHash == "" {
+        return "", fmt.Errorf("pinata response missing IpfsHash")
+    }
+
+    return result.IpfsHash, nil
 }
 
 

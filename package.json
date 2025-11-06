@@ -1,0 +1,15 @@
+{
+  "name": "penguin-proof-of-art",
+  "version": "1.0.0",
+  "description": "Proof-of-Art hackathon project with Ethereum Sepolia integration",
+  "scripts": {
+    "deploy-sepolia": "npx hardhat run scripts/deploy.js --network sepolia",
+    "compile": "npx hardhat compile",
+    "test": "npx hardhat test"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "dotenv": "^16.3.1",
+    "hardhat": "^2.26.5"
+  }
+}

@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/png"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"time"
@@ -17,8 +18,10 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"yourproject/internal/crypto"
+	"yourproject/internal/eth"
 	"yourproject/internal/ipfsdb"
 	"yourproject/internal/models"
+	"yourproject/internal/pinata"
 )
 
 type Handler struct {
@@ -804,5 +807,99 @@ func (h *Handlers) Verify(c echo.Context) error {
 		"hash":       data["hash"],
 		"public_key": publicKey,
 		"signature":  signature,
+	})
+}
+
+// UploadManifest handles POST /upload - uploads manifest to Pinata and stores CID on Ethereum
+func (h *Handler) UploadManifest(c echo.Context) error {
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 60*time.Second)
+	defer cancel()
+
+	var req struct {
+		ImageCID    string            `json:"image_cid"`
+		Creator     string            `json:"creator"` // wallet address
+		Prompt      string            `json:"prompt"`
+		Model       string            `json:"model"`
+		Origin      string            `json:"origin"`
+		Timestamp   int64             `json:"timestamp"`
+		DerivedFrom *string           `json:"derived_from,omitempty"`
+		Metadata    map[string]string `json:"metadata,omitempty"`
+	}
+
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request: " + err.Error()})
+	}
+
+	// Validate required fields
+	if req.ImageCID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "image_cid is required"})
+	}
+	if req.Creator == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "creator is required"})
+	}
+
+	// Create manifest JSON
+	manifest := map[string]interface{}{
+		"image_cid":  req.ImageCID,
+		"creator":    req.Creator,
+		"prompt":     req.Prompt,
+		"model":      req.Model,
+		"origin":     req.Origin,
+		"timestamp":  req.Timestamp,
+		"created_at": time.Now().Unix(),
+	}
+
+	if req.DerivedFrom != nil {
+		manifest["derived_from"] = *req.DerivedFrom
+	}
+
+	if req.Metadata != nil {
+		manifest["metadata"] = req.Metadata
+	}
+
+	// Pin manifest to Pinata
+	pinataClient := pinata.NewFromEnv()
+	if !pinataClient.Enabled() {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Pinata not configured. Please set PINATA_API_KEY and PINATA_API_SECRET"})
+	}
+
+	cid, err := pinataClient.PinJSONManifest(manifest)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to pin manifest to Pinata: " + err.Error()})
+	}
+
+	log.Printf("✅ Manifest pinned to Pinata: CID=%s", cid)
+
+	// Get Ethereum configuration from environment
+	rpcURL := os.Getenv("RPC_URL")
+	privateKey := os.Getenv("PRIVATE_KEY")
+	contractAddress := os.Getenv("CONTRACT_ADDRESS")
+
+	if rpcURL == "" || privateKey == "" || contractAddress == "" {
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Ethereum not configured. Please set RPC_URL, PRIVATE_KEY, and CONTRACT_ADDRESS in .env",
+			"cid":   cid,
+		})
+	}
+
+	// Store CID on Ethereum
+	txHash, err := eth.StoreManifest(ctx, rpcURL, privateKey, contractAddress, cid)
+	if err != nil {
+		// Return CID even if Ethereum transaction fails
+		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
+			"error": "failed to store on Ethereum: " + err.Error(),
+			"cid":   cid,
+		})
+	}
+
+	etherscanURL := fmt.Sprintf("https://sepolia.etherscan.io/tx/%s", txHash)
+
+	log.Printf("✅ Manifest stored on Ethereum: TX=%s", txHash)
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"cid":       cid,
+		"txHash":    txHash,
+		"etherscan": etherscanURL,
+		"manifest":  manifest,
 	})
 }

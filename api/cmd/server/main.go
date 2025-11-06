@@ -47,6 +47,38 @@ func main() {
 	// Handlers for node/artifact workflow
 	h := handlers.NewHandlers(db, artifactsDir, manifestsDir)
 
+	// Log configuration status
+	log.Println("🚀 Starting Proof-of-Art API Server")
+	log.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
+	rpcURL := os.Getenv("RPC_URL")
+	if rpcURL != "" {
+		// Mask sensitive parts of RPC URL
+		maskedURL := rpcURL
+		if len(maskedURL) > 50 {
+			maskedURL = maskedURL[:30] + "..." + maskedURL[len(maskedURL)-10:]
+		}
+		log.Printf("✅ RPC URL: %s", maskedURL)
+	} else {
+		log.Println("⚠️  RPC_URL not set - Ethereum features disabled")
+	}
+
+	contractAddr := os.Getenv("CONTRACT_ADDRESS")
+	if contractAddr != "" {
+		log.Printf("✅ Contract Address: %s", contractAddr)
+	} else {
+		log.Println("⚠️  CONTRACT_ADDRESS not set - deploy contract first and add to .env")
+	}
+
+	pinataKey := os.Getenv("PINATA_API_KEY")
+	if pinataKey != "" {
+		log.Println("✅ Pinata API Key: configured")
+	} else {
+		log.Println("⚠️  PINATA_API_KEY not set - IPFS features disabled")
+	}
+
+	log.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
 	// Handlers for generate/import/certificate workflow
 	storage := ipfsdb.NewStorageService(db)
 	ipfsClient := ipfsdb.NewIPFSClient(db)
@@ -71,8 +103,15 @@ func main() {
 	e.POST("/verify/upload", api.UploadForVerification)
 	e.GET("/verify/:id", api.VerifyArtwork)
 
+	// Manifest upload endpoint (Pinata + Ethereum)
+	e.POST("/upload", api.UploadManifest)
+	e.POST("/manifests", api.UploadManifest) // Alias for convenience
+
 	addr := ":8787"
-	log.Println("API listening on", addr)
+	log.Printf("🌐 API listening on %s", addr)
+	log.Println("📝 POST /upload - Upload manifest to Pinata and store CID on Ethereum")
+	log.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
+
 	if err := e.Start(addr); err != nil {
 		log.Fatal(err)
 	}

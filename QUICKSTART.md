@@ -1,91 +1,149 @@
-# Quick Start Guide
+# Quick Start Guide for Judges
 
-Get Proof-of-Art running in 5 minutes!
+This guide will help you quickly set up and run the Proof-of-Art system.
 
-## Prerequisites
+## Prerequisites Checklist
 
-- Go 1.21+ installed
-- Node.js 20+ installed
-- Pinata account ([Sign up free](https://pinata.cloud))
+- [ ] Go 1.21+ installed
+- [ ] Node.js 20+ installed
+- [ ] Infura account (free) - [Sign up](https://infura.io)
+- [ ] Pinata account (free) - [Sign up](https://pinata.cloud)
+- [ ] Sepolia testnet ETH - [Get from faucet](https://sepoliafaucet.com/)
 
-## Step 1: Get Pinata Credentials
+## Step-by-Step Setup
 
-1. Go to [Pinata Cloud](https://pinata.cloud) and sign up
-2. Navigate to [API Keys](https://pinata.cloud/developers/api-keys)
-3. Create a new API key
-4. Copy your **JWT token** (starts with `eyJ...`)
+### 1. Install Dependencies
 
-## Step 2: Backend Setup
+```bash
+# Install Hardhat and Node dependencies
+npm install
+
+# Install Go dependencies
+cd api
+go mod tidy
+cd ..
+```
+
+### 2. Configure Environment Variables
+
+#### Root `.env` (for contract deployment)
+
+Create `.env` at the repository root:
+
+```bash
+INFURA_PROJECT_ID=your_infura_project_id_here
+PRIVATE_KEY=0x...your_private_key_here
+```
+
+#### API `.env` (for backend server)
 
 ```bash
 cd api
+cp .env.example .env
+```
 
-# Install dependencies
-go mod tidy
+Edit `api/.env`:
 
-# Create .env file
-cat > .env << EOF
-PINATA_JWT=your_jwt_token_here
-IPFS_GATEWAY=https://gateway.pinata.cloud/ipfs
-EOF
+```bash
+INFURA_PROJECT_ID=your_infura_project_id_here
+RPC_URL=https://sepolia.infura.io/v3/your_infura_project_id_here
+PRIVATE_KEY=0x...your_private_key_here
+CONTRACT_ADDRESS=  # Will be set after deployment
+PINATA_API_KEY=your_pinata_api_key
+PINATA_API_SECRET=your_pinata_secret
+```
 
-# Run server
+### 3. Deploy Smart Contract
+
+```bash
+# Make sure you're at repository root
+npx hardhat run scripts/deploy.js --network sepolia
+```
+
+**Important**: Copy the deployed contract address from the output and add it to `api/.env` as `CONTRACT_ADDRESS=0x...`
+
+### 4. Run Backend Server
+
+```bash
+cd api
 go run ./cmd/server
 ```
 
-✅ Backend running at `http://localhost:8787`
+The server will start on `http://localhost:8080` and display configuration status.
 
-## Step 3: Frontend Setup
+### 5. Test the System
 
 ```bash
-cd frontend
+# Test health endpoint
+curl http://localhost:8080/health
 
-# Install dependencies
-npm install
-
-# Run dev server
-npm run dev
+# Upload a manifest
+curl -X POST http://localhost:8080/upload \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image_cid": "QmTest123",
+    "creator": "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb",
+    "prompt": "A beautiful sunset over mountains",
+    "model": "DALL-E 3",
+    "origin": "https://example.com",
+    "timestamp": 1704067200
+  }'
 ```
 
-✅ Frontend running at `http://localhost:5173`
+Expected response:
+```json
+{
+  "cid": "Qm...",
+  "txHash": "0x...",
+  "etherscan": "https://sepolia.etherscan.io/tx/0x...",
+  "manifest": {...}
+}
+```
 
-## Step 4: Test It!
+## Verification
 
-1. Open `http://localhost:5173` in your browser
-2. Enter a prompt (e.g., "A futuristic penguin")
-3. Click "Generate & Certify"
-4. Your artwork will be:
-   - Generated (if LLM API configured)
-   - Watermarked
-   - Uploaded to Pinata
-   - Assigned a unique CID
-   - Certified with blockchain proof
-
-## Verify Upload
-
-Check your Pinata dashboard to see the uploaded files with their CIDs!
+1. **Check Pinata**: Visit `https://gateway.pinata.cloud/ipfs/{cid}` to see the pinned manifest
+2. **Check Etherscan**: Visit the `etherscan` URL from the response to see the on-chain transaction
+3. **Check Contract**: Visit `https://sepolia.etherscan.io/address/{CONTRACT_ADDRESS}` to see the deployed contract
 
 ## Troubleshooting
 
-**Backend won't start:**
-- Check `.env` file exists in `api/` directory
-- Verify `PINATA_JWT` is set correctly
-- Run `go mod tidy` to ensure dependencies are installed
+### "abi.json not found"
+- Make sure you've deployed the contract first: `npx hardhat run scripts/deploy.js --network sepolia`
+- The ABI should be written to `api/internal/eth/abi.json` automatically
 
-**Frontend can't connect:**
-- Ensure backend is running on port 8787
-- Check browser console for errors
-- Verify `VITE_API_URL` is set to `http://localhost:8787`
+### "Pinata not configured"
+- Check that `PINATA_API_KEY` and `PINATA_API_SECRET` are set in `api/.env`
+- Get credentials from https://pinata.cloud
 
-**Pinata upload fails:**
-- Verify JWT token is valid
-- Check Pinata account has available storage
-- Test token: `curl -X GET "https://api.pinata.cloud/data/testAuthentication" -H "Authorization: Bearer $PINATA_JWT"`
+### "Ethereum not configured"
+- Check that `RPC_URL`, `PRIVATE_KEY`, and `CONTRACT_ADDRESS` are set in `api/.env`
+- Make sure you have Sepolia testnet ETH in the wallet
 
-## Next Steps
+### "insufficient funds"
+- Get Sepolia ETH from https://sepoliafaucet.com/
+- Make sure the `PRIVATE_KEY` corresponds to a wallet with Sepolia ETH
 
-- Deploy smart contract to Polygon testnet
-- Configure LLM API keys for generation
-- Set up production environment variables
-- See `Deploy and Test.md` for full deployment guide
+## Architecture Overview
 
+1. **Frontend/Client** → Sends manifest JSON to `/upload`
+2. **Backend** → Pins manifest to Pinata (IPFS) → Gets CID
+3. **Backend** → Calls Ethereum contract `storeManifest(cid)` → Gets TX hash
+4. **Response** → Returns CID, TX hash, and Etherscan link
+
+## Key Files
+
+- `contracts/ImageProvenance.sol` - Smart contract
+- `scripts/deploy.js` - Deployment script
+- `api/internal/eth/eth.go` - Ethereum integration
+- `api/internal/pinata/pinata.go` - Pinata IPFS integration
+- `api/internal/handlers/handlers.go` - HTTP handlers
+- `api/cmd/server/main.go` - Server entry point
+
+## Support
+
+For issues, check:
+- README.md for detailed documentation
+- Server logs for error messages
+- Etherscan for transaction status
+- Pinata dashboard for IPFS status
