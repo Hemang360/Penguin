@@ -18,6 +18,8 @@ export default function Dashboard() {
   const [prompt, setPrompt] = useState('');
   const [contentType, setContentType] = useState('image');
   const [provider, setProvider] = useState('openai');
+  const [model, setModel] = useState('');
+  const [imageSize, setImageSize] = useState('1024x1024');
   const [loading, setLoading] = useState(false);
   const [userWallet, setUserWallet] = useState('');
 
@@ -51,7 +53,10 @@ export default function Dashboard() {
         prompt: prompt,
         content_type: contentType,
         llm_provider: provider,
-        parameters: {}
+        parameters: {
+          model,
+          size: contentType === 'image' ? imageSize : undefined,
+        }
       });
 
       const newArtwork: Artwork = {
@@ -165,17 +170,81 @@ export default function Dashboard() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-2">LLM Provider</label>
+                <label className="block text-sm font-medium mb-2">Provider</label>
                 <select 
                   value={provider}
-                  onChange={(e) => setProvider(e.target.value)}
+                  onChange={(e) => {
+                    setProvider(e.target.value);
+                    setModel('');
+                  }}
                   className="w-full bg-white/20 rounded-lg px-4 py-2 border border-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-500"
                 >
                   <option value="openai">OpenAI</option>
+                  <option value="vertex">Google Vertex / Gemini</option>
+                  <option value="grok">Grok (xAI)</option>
                   <option value="stability">Stability AI</option>
-                  <option value="midjourney">Midjourney</option>
                 </select>
               </div>
+
+              {/* Model selector depends on provider/content type */}
+              <div>
+                <label className="block text-sm font-medium mb-2">Model</label>
+                <select
+                  value={model}
+                  onChange={(e) => setModel(e.target.value)}
+                  className="w-full bg-white/20 rounded-lg px-4 py-2 border border-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                >
+                  {provider === 'openai' && contentType === 'image' && (
+                    <>
+                      <option value="gpt-image-1">gpt-image-1</option>
+                      <option value="dall-e-3">dall-e-3</option>
+                    </>
+                  )}
+                  {provider === 'openai' && contentType === 'text' && (
+                    <>
+                      <option value="gpt-4o-mini">gpt-4o-mini</option>
+                      <option value="gpt-4o">gpt-4o</option>
+                    </>
+                  )}
+                  {provider === 'vertex' && contentType === 'image' && (
+                    <>
+                      <option value="imagegeneration@005">imagegeneration@005</option>
+                      <option value="imagegeneration@002">imagegeneration@002</option>
+                    </>
+                  )}
+                  {provider === 'vertex' && contentType === 'text' && (
+                    <>
+                      <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                      <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                    </>
+                  )}
+                  {provider === 'grok' && (
+                    <>
+                      <option value="grok-2">grok-2</option>
+                    </>
+                  )}
+                  {provider === 'stability' && contentType === 'image' && (
+                    <>
+                      <option value="stable-diffusion-xl-1024-v1-0">SDXL 1.0</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              {contentType === 'image' && (
+                <div>
+                  <label className="block text-sm font-medium mb-2">Image Size</label>
+                  <select
+                    value={imageSize}
+                    onChange={(e) => setImageSize(e.target.value)}
+                    className="w-full bg-white/20 rounded-lg px-4 py-2 border border-white/30 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  >
+                    <option value="512x512">512x512</option>
+                    <option value="768x768">768x768</option>
+                    <option value="1024x1024">1024x1024</option>
+                  </select>
+                </div>
+              )}
 
               <div>
                 <label className="block text-sm font-medium mb-2">Prompt</label>

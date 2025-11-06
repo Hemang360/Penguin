@@ -78,10 +78,10 @@ func (h *Handler) GenerateArt(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	// Call LLM API with temperature=0 for reproducibility
-	artworkData, err := h.callLLMAPI(req.LLMProvider, req.Prompt, req.ContentType)
+	// Call model provider API with temperature=0 for reproducibility
+	artworkData, err := h.callLLMAPI(req.LLMProvider, req.Prompt, req.ContentType, req.Parameters)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to generate art"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Process and watermark the artwork
@@ -355,29 +355,36 @@ func (h *Handler) UploadForVerification(c echo.Context) error {
 	})
 }
 
-// callLLMAPI calls various LLM APIs with temperature=0
-func (h *Handler) callLLMAPI(provider, prompt, contentType string) ([]byte, error) {
+// callLLMAPI calls various provider APIs with temperature=0
+func (h *Handler) callLLMAPI(provider, prompt, contentType string, params map[string]string) ([]byte, error) {
 	// This is a simplified implementation
 	// Add actual API calls to OpenAI, Stability AI, etc.
 
 	switch provider {
 	case "openai":
-		return h.callOpenAI(prompt, contentType)
+		return h.callOpenAI(prompt, contentType, params)
+	case "vertex", "gemini", "google":
+		return h.callVertexAI(prompt, contentType, params)
 	case "stability":
 		return h.callStabilityAI(prompt)
+	case "grok", "xai":
+		return h.callGrok(prompt, contentType, params)
 	default:
 		return nil, fmt.Errorf("unsupported provider: %s", provider)
 	}
 }
 
-func (h *Handler) callOpenAI(prompt, contentType string) ([]byte, error) {
+func (h *Handler) callOpenAI(prompt, contentType string, params map[string]string) ([]byte, error) {
 	// Implement OpenAI API call with temperature=0
-	apiKey := "YOUR_OPENAI_API_KEY" // Load from env
+	apiKey := os.Getenv("OPENAI_API_KEY")
+	if apiKey == "" {
+		return nil, fmt.Errorf("OPENAI_API_KEY not set")
+	}
 
 	if contentType == "text" {
 		return h.callOpenAIText(apiKey, prompt)
 	} else if contentType == "image" {
-		return h.callOpenAIImage(apiKey, prompt)
+		return h.callOpenAIImage(apiKey, prompt, params)
 	}
 
 	return nil, fmt.Errorf("unsupported content type")
@@ -407,13 +414,22 @@ func (h *Handler) callOpenAIText(apiKey, prompt string) ([]byte, error) {
 	return io.ReadAll(resp.Body)
 }
 
-func (h *Handler) callOpenAIImage(apiKey, prompt string) ([]byte, error) {
+func (h *Handler) callOpenAIImage(apiKey, prompt string, params map[string]string) ([]byte, error) {
 	url := "https://api.openai.com/v1/images/generations"
 
+	size := params["size"]
+	if size == "" {
+		size = "1024x1024"
+	}
+	model := params["model"]
+	if model == "" {
+		model = "gpt-image-1"
+	}
 	payload := map[string]interface{}{
 		"prompt": prompt,
 		"n":      1,
-		"size":   "1024x1024",
+		"size":   size,
+		"model":  model,
 	}
 
 	jsonData, _ := json.Marshal(payload)
@@ -447,6 +463,102 @@ func (h *Handler) callOpenAIImage(apiKey, prompt string) ([]byte, error) {
 	}
 
 	return nil, fmt.Errorf("failed to download generated image")
+}
+
+// callVertexAI handles Google Vertex AI image generation (Imagen models)
+func (h *Handler) callVertexAI(prompt, contentType string, params map[string]string) ([]byte, error) {
+	if contentType != "image" {
+		return nil, fmt.Errorf("vertex: unsupported content type: %s", contentType)
+	}
+
+	projectID := os.Getenv("VERTEX_PROJECT_ID")
+	location := os.Getenv("VERTEX_LOCATION")
+	accessToken := os.Getenv("GOOGLE_API_ACCESS_TOKEN")
+	if projectID == "" || location == "" || accessToken == "" {
+		return nil, fmt.Errorf("vertex: VERTEX_PROJECT_ID, VERTEX_LOCATION, and GOOGLE_API_ACCESS_TOKEN must be set")
+	}
+
+	// Default Imagen model name may evolve; allow override via params["model"]
+	model := params["model"]
+	if model == "" {
+		model = "imagegeneration@005" // public Vertex image generation model
+	}
+
+	endpoint := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:predict", location, projectID, location, model)
+
+	// Build request per Vertex prediction schema
+	size := params["size"]
+	if size == "" {
+		size = "1024x1024"
+	}
+	instances := []map[string]any{{
+		"prompt": prompt,
+	}}
+	parameters := map[string]any{
+		"sampleCount": 1,
+		"imageSize":   size,
+	}
+	body := map[string]any{
+		"instances":  instances,
+		"parameters": parameters,
+	}
+	jsonData, _ := json.Marshal(body)
+	req, _ := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	var result map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+	// Parse predictions[0].bytesBase64Encoded
+	if preds, ok := result["predictions"].([]any); ok && len(preds) > 0 {
+		if m, ok := preds[0].(map[string]any); ok {
+			if b64, ok := m["bytesBase64Encoded"].(string); ok && b64 != "" {
+				return base64.StdEncoding.DecodeString(b64)
+			}
+		}
+	}
+	return nil, fmt.Errorf("vertex: image bytes not found in response")
+}
+
+// callGrok wires xAI (Grok) provider. Currently only text is supported here.
+func (h *Handler) callGrok(prompt, contentType string, params map[string]string) ([]byte, error) {
+	if contentType == "image" {
+		return nil, fmt.Errorf("grok: image generation not implemented")
+	}
+	apiKey := os.Getenv("XAI_API_KEY")
+	if apiKey == "" {
+		return nil, fmt.Errorf("XAI_API_KEY not set")
+	}
+	// Basic text completion example (placeholder)
+	url := "https://api.x.ai/v1/chat/completions"
+	payload := map[string]any{
+		"model":       params["model"],
+		"messages":    []map[string]string{{"role": "user", "content": prompt}},
+		"temperature": 0,
+	}
+	if payload["model"] == "" {
+		payload["model"] = "grok-2"
+	}
+	jsonData, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return io.ReadAll(resp.Body)
 }
 
 func (h *Handler) callStabilityAI(prompt string) ([]byte, error) {
@@ -487,7 +599,7 @@ func (h *Handlers) ExtPush(c echo.Context) error {
 	h.db.Save(key, req)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"key":  key,
+		"key":    key,
 		"status": "stored",
 	})
 }
@@ -512,9 +624,9 @@ func (h *Handlers) CreateNode(c echo.Context) error {
 
 	// Create node data
 	nodeData := map[string]interface{}{
-		"kind":   req.Kind,
-		"author": req.Author,
-		"body":   req.Body,
+		"kind":      req.Kind,
+		"author":    req.Author,
+		"body":      req.Body,
 		"timestamp": time.Now(),
 	}
 
@@ -529,11 +641,11 @@ func (h *Handlers) CreateNode(c echo.Context) error {
 	}
 
 	node := map[string]interface{}{
-		"data":      nodeData,
-		"hash":      nodeHash,
-		"signature": signature,
+		"data":       nodeData,
+		"hash":       nodeHash,
+		"signature":  signature,
 		"public_key": signer.PublicKey(),
-		"key_id":    signer.KeyID(),
+		"key_id":     signer.KeyID(),
 	}
 
 	// Store node
@@ -592,10 +704,10 @@ func (h *Handlers) UploadArtifact(c echo.Context) error {
 	os.WriteFile(filePath, data, 0644)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"key":      artifactKey,
-		"hash":     artifactHash,
-		"blake3":   blake3Hash,
-		"node_id":  nodeID,
+		"key":     artifactKey,
+		"hash":    artifactHash,
+		"blake3":  blake3Hash,
+		"node_id": nodeID,
 	})
 }
 
@@ -645,8 +757,8 @@ func (h *Handlers) FinalizeManifest(c echo.Context) error {
 	os.WriteFile(filePath, manifestJSON, 0644)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"key":     manifestKey,
-		"hash":    manifestHash,
+		"key":      manifestKey,
+		"hash":     manifestHash,
 		"manifest": manifest,
 	})
 }
@@ -664,12 +776,12 @@ func (h *Handlers) Verify(c echo.Context) error {
 	}
 
 	data := val.(map[string]interface{})
-	
+
 	// Extract signature and data
 	signature, _ := data["signature"].(string)
 	nodeData := data["data"]
 	publicKey, _ := data["public_key"].(string)
-	
+
 	if signature == "" || publicKey == "" {
 		return c.JSON(http.StatusOK, map[string]interface{}{
 			"key":    key,
@@ -684,13 +796,13 @@ func (h *Handlers) Verify(c echo.Context) error {
 	// Note: This is a simplified check - proper implementation would verify the signature
 	// For now, we'll just check if the signature exists
 	_, _ = json.Marshal(nodeData) // Serialize for potential future verification
-	
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"key":       key,
-		"valid":     signature != "",
-		"data":      nodeData,
-		"hash":      data["hash"],
+		"key":        key,
+		"valid":      signature != "",
+		"data":       nodeData,
+		"hash":       data["hash"],
 		"public_key": publicKey,
-		"signature": signature,
+		"signature":  signature,
 	})
 }
