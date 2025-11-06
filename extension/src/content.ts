@@ -40,7 +40,6 @@ class DomPathCapturer {
 
 const capturer = new DomPathCapturer();
 
-// Safe wrappers to avoid "Extension context invalidated" runtime errors
 function canUseExtensionApis(): boolean {
 	try {
 		return typeof chrome !== 'undefined' && !!chrome.runtime && !!chrome.runtime.id;
@@ -59,7 +58,6 @@ function safeSetStorage(obj: Record<string, any>) {
 	try { chrome.storage.local.set(obj); } catch { /* no-op */ }
 }
 
-// --- Provider Detection & Scraping Helpers ---
 
 type Provider = "chatgpt" | "claude" | "gemini" | "perplexity" | "unknown";
 
@@ -78,7 +76,6 @@ function detectProvider(href: string): Provider {
 }
 
 function getModelVersion(provider: Provider): string {
-	// Heuristics; many UIs do not expose model reliably in DOM
 	switch (provider) {
 		case "chatgpt": {
 			const el = document.querySelector('[data-testid="model-switcher"]') || document.querySelector('[data-testid*="model"]');
@@ -97,7 +94,6 @@ function getModelVersion(provider: Provider): string {
 	}
 }
 
-// Recursively collect text including inside shadow DOM
 function getDeepText(root: Element): string {
 	let text = '';
 	function walk(node: Node) {
@@ -107,11 +103,9 @@ function getDeepText(root: Element): string {
 			return;
 		}
 		if (node instanceof Element) {
-			// Skip hidden elements
 			const style = window.getComputedStyle(node);
 			if (style && (style.display === 'none' || style.visibility === 'hidden')) return;
 			for (const child of Array.from(node.childNodes) as unknown as Node[]) walk(child);
-			// Shadow DOM
 			const anyEl = node as any;
 			if (anyEl.shadowRoot) {
 				for (const child of Array.from(anyEl.shadowRoot.childNodes) as unknown as Node[]) walk(child);
@@ -124,7 +118,6 @@ function getDeepText(root: Element): string {
 
 function cleanText(raw: string | null | undefined): string | null {
 	if (!raw) return null;
-	// Collapse whitespace and strip zero-width characters
 	const normalized = raw
 		.replace(/[\u200B-\u200D\uFEFF]/g, '')
 		.replace(/\s+/g, ' ')
@@ -136,11 +129,9 @@ function cleanText(raw: string | null | undefined): string | null {
 function extractLatestUserPrompt(provider: Provider): string | null {
 	switch (provider) {
 		case "chatgpt": {
-			// Prefer the last explicit user turn container
 			const turnNodes = Array.from(document.querySelectorAll('[data-testid="conversation-turn-user"], [data-message-author-role="user"], [data-testid="user-message"]')) as HTMLElement[];
 			const lastUserMsg = turnNodes.pop();
 			if (lastUserMsg) return lastUserMsg.innerText.trim() || lastUserMsg.textContent?.trim() || null;
-			// Fallback to the input area
 			const ta = document.querySelector('textarea, [data-testid="prompt-textarea"], [role="textbox"][contenteditable="true"], [contenteditable="true"][data-testid="textbox"]');
 			return ((ta as HTMLTextAreaElement | null)?.value || (ta as HTMLElement | null)?.innerText || '').trim() || null;
 		}
@@ -170,11 +161,9 @@ function extractLatestUserPrompt(provider: Provider): string | null {
 			return fallback || null;
 		}
 		case "perplexity": {
-			// Prefer last explicit user bubble or lexical editor text span
 			const lastUserMsg = Array.from(document.querySelectorAll('[data-author="user"], .message.user, [data-testid="chat-message-user"], [data-testid^="chat-message-"][data-role="user"], article[aria-label*="You"], span[data-lexical-text="true"]'))
 				.pop() as HTMLElement | undefined;
 			if (lastUserMsg) return (lastUserMsg.innerText || lastUserMsg.textContent || '').trim() || null;
-			// Fallback to active editor
 			const ta = document.querySelector('[data-testid="prompt-editor"] textarea, [data-testid^="chat-input"] textarea, textarea[placeholder*="Ask" i], textarea[placeholder*="Type" i], textarea, [contenteditable="true"][role="textbox"], [contenteditable="true"][data-testid*="editor"]');
 			return ((ta as HTMLTextAreaElement | null)?.value || (ta as HTMLElement | null)?.innerText || '').trim() || null;
 		}
@@ -217,14 +206,12 @@ function extractLatestAssistantOutput(provider: Provider): string | null {
 			return null;
 		}
 		case "perplexity": {
-			// Prefer markdown/prose, else derive text from media alt
 			const candidates = Array.from(document.querySelectorAll('[data-testid="chat-message-assistant"] [data-testid="markdown"], [data-testid="chat-message"] [data-testid="markdown"], [data-testid^="chat-message-"] [data-testid="markdown"], .prose, [data-testid="response"], .answer, article[aria-label*="Answer"], article .prose')) as HTMLElement[];
 			for (let i = candidates.length - 1; i >= 0; i--) {
 				const node = candidates[i];
 				const deep = getDeepText(node);
 				if (deep) return deep;
 			}
-			// If only image, use its alt text as output text
 			const img = document.querySelector('img[src*="user-gen-media-assets" i]') as HTMLImageElement | null;
 			if (img && (img.alt || '').trim()) return img.alt.trim();
 			return null;
@@ -235,7 +222,6 @@ function extractLatestAssistantOutput(provider: Provider): string | null {
 	}
 }
 
-// New: find assistant container and text together for media extraction
 function getLatestAssistantContext(provider: Provider): { text: string | null; container: HTMLElement | null } {
 	const pick = (nodes: HTMLElement[]): { text: string | null; container: HTMLElement | null } => {
 		for (let i = nodes.length - 1; i >= 0; i--) {
@@ -261,12 +247,11 @@ function getLatestAssistantContext(provider: Provider): { text: string | null; c
 	}
 }
 
-// Collect media attachments from a container
 interface Attachment {
 	type: "image" | "audio" | "video" | "file";
 	url: string;
 	mime?: string;
-	dataUrl?: string; // may be omitted if large or blocked
+	dataUrl?: string; 
 	filename?: string;
 }
 
@@ -324,7 +309,6 @@ async function collectAttachmentsFrom(container: HTMLElement | null): Promise<At
 		}
 	}
 
-	// Merge with recentAssets captured by background debugger (only for true media types)
 	try {
 		chrome.storage.local.get(['recentAssets'], (res) => {
 			const recent: { url: string; mime?: string; base64?: string }[] = Array.isArray(res.recentAssets) ? res.recentAssets : [];
@@ -340,7 +324,6 @@ async function collectAttachmentsFrom(container: HTMLElement | null): Promise<At
 		});
 	} catch {}
 
-	// Deduplicate by URL+MIME
 	const seen = new Set<string>();
 	const unique: Attachment[] = [];
 	for (const a of attachments) {
@@ -360,7 +343,6 @@ let geminiInterval: number | null = null;
 async function emitInteraction(provider: Provider) {
 	const ctx = getLatestAssistantContext(provider);
 	const outputText = ctx.text;
-	// For pure-media replies, text can be empty; proceed if we at least have a container
 	if (!outputText && !ctx.container) return;
 	const sigSource = outputText && outputText.length > 0 ? outputText : (ctx.container?.innerHTML || '');
 	const signature = sigSource.slice(0, 200);
@@ -368,26 +350,22 @@ async function emitInteraction(provider: Provider) {
 	lastOutputSignature = signature;
 
 	const inputPrompt = extractLatestUserPrompt(provider) || "";
-	const url = window.location.origin; // domain as requested
+	const url = window.location.origin; 
 	const modelVersion = getModelVersion(provider);
 
 	const attachments = await collectAttachmentsFrom(ctx.container);
 
-	// Perplexity fallback: if no attachments from container, scan global generated media images
 	if (attachments.length === 0 && provider === 'perplexity') {
 		const globalImgs = Array.from(document.querySelectorAll('img[src*="user-gen-media-assets" i]')) as HTMLImageElement[];
 		for (const img of globalImgs) {
 			const url = (img.currentSrc || img.src || '').trim();
 			if (!url) continue;
-			// Skip inlining; keep only URL/mime/filename
 			attachments.push({ type: "image", url, filename: (img.alt || '').trim() || undefined });
 		}
 	}
 
-	// Remove dataUrl fields before emitting
 	const attachmentsSanitized = attachments.map(a => ({ type: a.type, url: a.url, mime: a.mime, filename: a.filename }));
 
-	// Prefer media as output; if none, fall back to text
 	const output: any = attachmentsSanitized.length > 0 ? attachmentsSanitized : (outputText || '');
 
 	const interaction = {
@@ -414,8 +392,7 @@ function startScraping() {
 	if (geminiInterval !== null) { window.clearInterval(geminiInterval); geminiInterval = null; }
 
 	if (provider === 'gemini' || provider === 'perplexity') {
-		// Poll because significant UI may live in shadow DOM or virtualized trees
-		emitInteraction(provider); // immediate attempt
+		emitInteraction(provider); 
 		geminiInterval = window.setInterval(() => emitInteraction(provider), 800);
 
 		if (provider === 'perplexity') {
@@ -429,7 +406,7 @@ function startScraping() {
 		return;
 	}
 
-	emitInteraction(provider); // immediate attempt
+	emitInteraction(provider); 
 	observer = new MutationObserver(() => emitInteraction(provider));
 	observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 }
