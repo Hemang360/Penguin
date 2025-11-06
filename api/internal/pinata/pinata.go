@@ -1,152 +1,360 @@
+// internal/pinata/client.go
 package pinata
 
 import (
-    "bytes"
-    "encoding/json"
-    "fmt"
-    "io"
-    "mime/multipart"
-    "net/http"
-    "os"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"os"
+	"time"
 )
 
+// Client represents a Pinata API client
 type Client struct {
-    httpClient *http.Client
-    authJWT    string
-    apiKey     string
-    apiSecret  string
+	apiKey    string
+	apiSecret string
+	enabled   bool
 }
 
+// PinataMetadata represents metadata for Pinata uploads
+type PinataMetadata struct {
+	Name      string            `json:"name"`
+	KeyValues map[string]string `json:"keyvalues,omitempty"`
+}
+
+// PinataOptions represents options for Pinata uploads
+type PinataOptions struct {
+	CidVersion int `json:"cidVersion,omitempty"`
+}
+
+// NewFromEnv creates a new Pinata client from environment variables
 func NewFromEnv() *Client {
-    return &Client{
-        httpClient: &http.Client{},
-        authJWT:    os.Getenv("PINATA_JWT"),
-        apiKey:     os.Getenv("PINATA_API_KEY"),
-        apiSecret:  os.Getenv("PINATA_API_SECRET"),
-    }
+	apiKey := os.Getenv("PINATA_API_KEY")
+	apiSecret := os.Getenv("PINATA_API_SECRET")
+
+	return &Client{
+		apiKey:    apiKey,
+		apiSecret: apiSecret,
+		enabled:   apiKey != "" && apiSecret != "",
+	}
 }
 
+// New creates a new Pinata client with explicit credentials
+func New(apiKey, apiSecret string) *Client {
+	return &Client{
+		apiKey:    apiKey,
+		apiSecret: apiSecret,
+		enabled:   apiKey != "" && apiSecret != "",
+	}
+}
+
+// Enabled returns whether the client is properly configured
 func (c *Client) Enabled() bool {
-    return c != nil && (c.authJWT != "" || (c.apiKey != "" && c.apiSecret != ""))
+	return c.enabled
 }
 
-// UploadBytes uploads raw bytes to Pinata using pinFileToIPFS and returns CID
-func (c *Client) UploadBytes(data []byte, filename string) (string, error) {
-    if !c.Enabled() {
-        return "", fmt.Errorf("pinata not configured")
-    }
+// UploadFile uploads a file to Pinata IPFS with metadata
+// metadata parameter uses interface{} to avoid circular dependency with ipfsdb
+func (c *Client) UploadFile(data []byte, metadata interface{}) (string, error) {
+	if !c.enabled {
+		return "", fmt.Errorf("pinata client not configured")
+	}
 
-    var buf bytes.Buffer
-    mw := multipart.NewWriter(&buf)
-    fw, err := mw.CreateFormFile("file", filename)
-    if err != nil { return "", err }
-    if _, err := io.Copy(fw, bytes.NewReader(data)); err != nil { return "", err }
-    _ = mw.WriteField("pinataOptions", "{}")
-    _ = mw.WriteField("pinataMetadata", "{}")
-    if err := mw.Close(); err != nil { return "", err }
+	// Extract fields from metadata using JSON marshal/unmarshal approach
+	var artworkID, artistWallet, promptHash, contentHash string
+	var timestamp time.Time
+	var metadataMap map[string]string
 
-    req, err := http.NewRequest("POST", "https://api.pinata.cloud/pinning/pinFileToIPFS", &buf)
-    if err != nil { return "", err }
-    req.Header.Set("Content-Type", mw.FormDataContentType())
-    if c.authJWT != "" {
-        req.Header.Set("Authorization", "Bearer "+c.authJWT)
-    } else {
-        req.Header.Set("pinata_api_key", c.apiKey)
-        req.Header.Set("pinata_secret_api_key", c.apiSecret)
-    }
+	// Convert metadata to JSON and back to extract fields
+	jsonBytes, err := json.Marshal(metadata)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal metadata: %w", err)
+	}
 
-    resp, err := c.httpClient.Do(req)
-    if err != nil { return "", err }
-    defer resp.Body.Close()
-    if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-        b, _ := io.ReadAll(resp.Body)
-        return "", fmt.Errorf("pinata upload failed: %s", string(b))
-    }
+	var genericMetadata struct {
+		ArtworkID    string            `json:"artwork_id"`
+		ArtistWallet string            `json:"artist_wallet"`
+		PromptHash   string            `json:"prompt_hash"`
+		ContentHash  string            `json:"content_hash"`
+		Timestamp    time.Time         `json:"timestamp"`
+		Metadata     map[string]string `json:"metadata"`
+	}
 
-    // Minimal parse to extract IpfsHash
-    body, _ := io.ReadAll(resp.Body)
-    // Body contains JSON like: {"IpfsHash":"Qm...","PinSize":...,"Timestamp":"..."}
-    // Parse naive (avoid new deps):
-    s := string(body)
-    const key = "\"IpfsHash\":"
-    i := bytes.Index([]byte(s), []byte(key))
-    if i == -1 { return "", fmt.Errorf("pinata response missing IpfsHash") }
-    // find first quote after key
-    j := i + len(key)
-    // trim spaces
-    for j < len(s) && (s[j] == ' ' || s[j] == '\t' || s[j] == '\n' || s[j] == '\r' || s[j] == '"' || s[j] == ':') { j++ }
-    // now read until next quote
-    // but IpfsHash is JSON string; simplest robust approach is a tiny scan
-    start := j
-    // find end of string (quote)
-    for start < len(s) && s[start] != '"' { start++ }
-    start++
-    end := start
-    for end < len(s) && s[end] != '"' { end++ }
-    if start >= len(s) || end > len(s) || end <= start {
-        return "", fmt.Errorf("failed to parse IpfsHash")
-    }
-    cid := s[start:end]
-    return cid, nil
+	if err := json.Unmarshal(jsonBytes, &genericMetadata); err != nil {
+		return "", fmt.Errorf("failed to unmarshal metadata: %w", err)
+	}
+
+	artworkID = genericMetadata.ArtworkID
+	artistWallet = genericMetadata.ArtistWallet
+	promptHash = genericMetadata.PromptHash
+	contentHash = genericMetadata.ContentHash
+	timestamp = genericMetadata.Timestamp
+	metadataMap = genericMetadata.Metadata
+
+	url := "https://api.pinata.cloud/pinning/pinFileToIPFS"
+
+	// Create multipart form
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+
+	// Add file part
+	fileName := fmt.Sprintf("artwork-%s.png", artworkID)
+	if artworkID == "" {
+		fileName = fmt.Sprintf("artwork-%d.png", time.Now().Unix())
+	}
+
+	part, err := writer.CreateFormFile("file", fileName)
+	if err != nil {
+		return "", fmt.Errorf("failed to create form file: %w", err)
+	}
+	if _, err := part.Write(data); err != nil {
+		return "", fmt.Errorf("failed to write file data: %w", err)
+	}
+
+	// Create pinataMetadata with required "name" field
+	pinataMetadata := PinataMetadata{
+		Name: fileName,
+		KeyValues: map[string]string{
+			"artwork_id":   artworkID,
+			"artist":       artistWallet,
+			"prompt_hash":  promptHash,
+			"content_hash": contentHash,
+		},
+	}
+
+	// Add timestamp if available
+	if !timestamp.IsZero() {
+		pinataMetadata.KeyValues["timestamp"] = timestamp.Format(time.RFC3339)
+	}
+
+	// Add provider and content_type if available
+	if metadataMap != nil {
+		if provider, ok := metadataMap["provider"]; ok && provider != "" {
+			pinataMetadata.KeyValues["provider"] = provider
+		}
+		if contentType, ok := metadataMap["content_type"]; ok && contentType != "" {
+			pinataMetadata.KeyValues["content_type"] = contentType
+		}
+		if originalHash, ok := metadataMap["original_hash"]; ok && originalHash != "" {
+			pinataMetadata.KeyValues["original_hash"] = originalHash
+		}
+	}
+
+	// Add metadata to form
+	metadataJSON, err := json.Marshal(pinataMetadata)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal metadata: %w", err)
+	}
+
+	metadataPart, err := writer.CreateFormField("pinataMetadata")
+	if err != nil {
+		return "", fmt.Errorf("failed to create metadata field: %w", err)
+	}
+	if _, err := metadataPart.Write(metadataJSON); err != nil {
+		return "", fmt.Errorf("failed to write metadata: %w", err)
+	}
+
+	// Add pinataOptions
+	pinataOptions := PinataOptions{
+		CidVersion: 1,
+	}
+	optionsJSON, err := json.Marshal(pinataOptions)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal options: %w", err)
+	}
+
+	optionsPart, err := writer.CreateFormField("pinataOptions")
+	if err != nil {
+		return "", fmt.Errorf("failed to create options field: %w", err)
+	}
+	if _, err := optionsPart.Write(optionsJSON); err != nil {
+		return "", fmt.Errorf("failed to write options: %w", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("failed to close multipart writer: %w", err)
+	}
+
+	// Create request
+	req, err := http.NewRequest("POST", url, body)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("pinata_api_key", c.apiKey)
+	req.Header.Set("pinata_secret_api_key", c.apiSecret)
+
+	// Execute request
+	client := &http.Client{Timeout: 120 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("pinata request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("pinata upload failed (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	// Parse response to get IPFS hash
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	ipfsHash, ok := result["IpfsHash"].(string)
+	if !ok {
+		return "", fmt.Errorf("IpfsHash not found in response")
+	}
+
+	return ipfsHash, nil
 }
 
-// PinJSONManifest pins a JSON manifest to Pinata and returns the CID
-func (c *Client) PinJSONManifest(manifest interface{}) (string, error) {
-    if !c.Enabled() {
-        return "", fmt.Errorf("pinata not configured")
-    }
+// PinJSONManifest uploads JSON content to Pinata IPFS
+func (c *Client) PinJSONManifest(manifest map[string]interface{}) (string, error) {
+	if !c.enabled {
+		return "", fmt.Errorf("pinata client not configured")
+	}
 
-    // Marshal manifest to JSON
-    jsonData, err := json.Marshal(manifest)
-    if err != nil {
-        return "", fmt.Errorf("failed to marshal manifest: %w", err)
-    }
+	url := "https://api.pinata.cloud/pinning/pinJSONToIPFS"
 
-    // Create request body
-    reqBody := bytes.NewBuffer(jsonData)
+	// Get a meaningful name from manifest if available
+	manifestName := fmt.Sprintf("manifest-%d", time.Now().Unix())
+	if imageCID, ok := manifest["image_cid"].(string); ok && imageCID != "" {
+		manifestName = fmt.Sprintf("manifest-%s", imageCID[:8])
+	}
 
-    // Create HTTP request
-    req, err := http.NewRequest("POST", "https://api.pinata.cloud/pinning/pinJSONToIPFS", reqBody)
-    if err != nil {
-        return "", fmt.Errorf("failed to create request: %w", err)
-    }
+	// Prepare request body with pinataMetadata
+	requestBody := map[string]interface{}{
+		"pinataContent": manifest,
+		"pinataMetadata": map[string]interface{}{
+			"name": manifestName,
+			"keyvalues": map[string]string{
+				"type":      "artwork_manifest",
+				"timestamp": fmt.Sprintf("%d", time.Now().Unix()),
+			},
+		},
+		"pinataOptions": map[string]interface{}{
+			"cidVersion": 1,
+		},
+	}
 
-    req.Header.Set("Content-Type", "application/json")
-    if c.authJWT != "" {
-        req.Header.Set("Authorization", "Bearer "+c.authJWT)
-    } else {
-        req.Header.Set("pinata_api_key", c.apiKey)
-        req.Header.Set("pinata_secret_api_key", c.apiSecret)
-    }
+	// Add creator to keyvalues if available
+	if creator, ok := manifest["creator"].(string); ok && creator != "" {
+		requestBody["pinataMetadata"].(map[string]interface{})["keyvalues"].(map[string]string)["creator"] = creator
+	}
 
-    // Send request
-    resp, err := c.httpClient.Do(req)
-    if err != nil {
-        return "", fmt.Errorf("failed to send request: %w", err)
-    }
-    defer resp.Body.Close()
+	jsonData, err := json.Marshal(requestBody)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal request: %w", err)
+	}
 
-    if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-        body, _ := io.ReadAll(resp.Body)
-        return "", fmt.Errorf("pinata upload failed (status %d): %s", resp.StatusCode, string(body))
-    }
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
 
-    // Parse response
-    var result struct {
-        IpfsHash string `json:"IpfsHash"`
-        PinSize  int64  `json:"PinSize"`
-        Timestamp string `json:"Timestamp"`
-    }
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("pinata_api_key", c.apiKey)
+	req.Header.Set("pinata_secret_api_key", c.apiSecret)
 
-    if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-        return "", fmt.Errorf("failed to parse response: %w", err)
-    }
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("pinata request failed: %w", err)
+	}
+	defer resp.Body.Close()
 
-    if result.IpfsHash == "" {
-        return "", fmt.Errorf("pinata response missing IpfsHash")
-    }
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
 
-    return result.IpfsHash, nil
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("pinata upload failed (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return "", fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	ipfsHash, ok := result["IpfsHash"].(string)
+	if !ok {
+		return "", fmt.Errorf("IpfsHash not found in response")
+	}
+
+	return ipfsHash, nil
 }
 
+// UnpinFile removes a file from Pinata
+func (c *Client) UnpinFile(ipfsHash string) error {
+	if !c.enabled {
+		return fmt.Errorf("pinata client not configured")
+	}
 
+	url := fmt.Sprintf("https://api.pinata.cloud/pinning/unpin/%s", ipfsHash)
+
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("pinata_api_key", c.apiKey)
+	req.Header.Set("pinata_secret_api_key", c.apiSecret)
+
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("pinata request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("pinata unpin failed (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
+
+// TestAuthentication tests the Pinata API credentials
+func (c *Client) TestAuthentication() error {
+	if !c.enabled {
+		return fmt.Errorf("pinata client not configured")
+	}
+
+	url := "https://api.pinata.cloud/data/testAuthentication"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("pinata_api_key", c.apiKey)
+	req.Header.Set("pinata_secret_api_key", c.apiSecret)
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("pinata request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("pinata authentication failed (status %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	return nil
+}
