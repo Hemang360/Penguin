@@ -9,6 +9,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 
+	"yourproject/internal/auth"
 	"yourproject/internal/handlers"
 	"yourproject/internal/ipfsdb"
 )
@@ -77,6 +78,13 @@ func main() {
 		log.Println("⚠️  PINATA_API_KEY not set - IPFS features disabled")
 	}
 
+	azureTenantID := os.Getenv("AZURE_TENANT_ID")
+	if azureTenantID != "" {
+		log.Printf("Azure Tenant ID: %s", azureTenantID)
+	} else {
+		log.Println("AZURE_TENANT_ID not set - using 'common' for multi-tenant")
+	}
+
 	log.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	// Handlers for generate/import/certificate workflow
@@ -85,27 +93,32 @@ func main() {
 	bcClient := ipfsdb.NewBlockchainClient(db)
 	api := handlers.NewHandler(storage, ipfsClient, bcClient)
 
+	// Public endpoints (no authentication required)
 	e.GET("/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
-
-	// Core endpoints (node/artifact flow)
-	e.POST("/ext/push", h.ExtPush)
-	e.POST("/node", h.CreateNode)
-	e.POST("/artifact", h.UploadArtifact)
-	e.POST("/finalize", h.FinalizeManifest)
 	e.GET("/verify", h.Verify)
-
-	// API endpoints (generation/import/certificates)
-	e.POST("/generate", api.GenerateArt)
-	e.POST("/import", api.ImportArt)
-	e.GET("/certificate/:id", api.GetCertificate)
-	e.POST("/verify/upload", api.UploadForVerification)
 	e.GET("/verify/:id", api.VerifyArtwork)
+	e.GET("/certificate/:id", api.GetCertificate)
 
-	// Manifest upload endpoint (Pinata + Ethereum)
-	e.POST("/upload", api.UploadManifest)
-	e.POST("/manifests", api.UploadManifest) // Alias for convenience
+	// Protected endpoints (require Microsoft authentication)
+	protected := e.Group("")
+	protected.Use(auth.JWTAuthMiddleware())
+
+	// Core endpoints (node/artifact flow) - protected
+	protected.POST("/ext/push", h.ExtPush)
+	protected.POST("/node", h.CreateNode)
+	protected.POST("/artifact", h.UploadArtifact)
+	protected.POST("/finalize", h.FinalizeManifest)
+
+	// API endpoints (generation/import/certificates) - protected
+	protected.POST("/generate", api.GenerateArt)
+	protected.POST("/import", api.ImportArt)
+	protected.POST("/verify/upload", api.UploadForVerification)
+
+	// Manifest upload endpoint (Pinata + Ethereum) - protected
+	protected.POST("/upload", api.UploadManifest)
+	protected.POST("/manifests", api.UploadManifest) // Alias for convenience
 
 	addr := ":8787"
 	log.Printf("🌐 API listening on %s", addr)

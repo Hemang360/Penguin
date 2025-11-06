@@ -18,6 +18,7 @@ import (
 	"github.com/labstack/echo/v4"
 	_ "golang.org/x/image/webp"
 
+	"yourproject/internal/auth"
 	"yourproject/internal/crypto"
 	"yourproject/internal/eth"
 	"yourproject/internal/ipfsdb"
@@ -82,6 +83,15 @@ func (h *Handler) GenerateArt(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
+	// Get authenticated user ID from JWT token
+	userID, ok := auth.GetUserIDFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not authenticated"})
+	}
+
+	// Override UserID from request with authenticated user ID (security: prevent user ID spoofing)
+	req.UserID = userID
+
 	// Call model provider API with temperature=0 for reproducibility
 	artworkData, err := h.callLLMAPI(req.LLMProvider, req.Prompt, req.ContentType, req.Parameters)
 	if err != nil {
@@ -108,6 +118,15 @@ func (h *Handler) ImportArt(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
+
+	// Get authenticated user ID from JWT token
+	userID, ok := auth.GetUserIDFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not authenticated"})
+	}
+
+	// Override UserID from request with authenticated user ID (security: prevent user ID spoofing)
+	req.UserID = userID
 
 	// Process imported artwork
 	artwork, certificate, err := h.processArtwork(

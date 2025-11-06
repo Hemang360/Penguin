@@ -3,6 +3,36 @@ import axios from 'axios'
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8787'
 const api = axios.create({ baseURL })
 
+// Add request interceptor to include JWT token in Authorization header
+api.interceptors.request.use(
+  (config) => {
+    // Get token from localStorage (set by AuthContext)
+    const token = localStorage.getItem('msal_access_token')
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => {
+    return Promise.reject(error)
+  }
+)
+
+// Add response interceptor to handle 401 errors (unauthorized)
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      // Token expired or invalid, clear it
+      localStorage.removeItem('msal_access_token')
+      localStorage.removeItem('msal_account')
+      // Optionally redirect to login
+      window.location.href = '/'
+    }
+    return Promise.reject(error)
+  }
+)
+
 export const health = () => api.get('/health').then(r => r.data)
 export const verifyByKey = (key: string) => api.get('/verify', { params: { key } }).then(r => r.data)
 

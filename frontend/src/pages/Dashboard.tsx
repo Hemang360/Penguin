@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Upload, Image, FileText, Music, CheckCircle, AlertCircle } from 'lucide-react';
 import { generateArt, importArt, getCertificate } from '../lib/api';
 import Topbar from '../components/Topbar';
+import { useAuth } from '../contexts/AuthContext';
 
 interface Artwork {
   id: string;
@@ -15,6 +16,7 @@ interface Artwork {
 }
 
 export default function Dashboard() {
+  const { isAuthenticated, account } = useAuth();
   const [artworks, setArtworks] = useState<Artwork[]>([]);
   const [prompt, setPrompt] = useState('');
   const [contentType, setContentType] = useState('image');
@@ -25,13 +27,18 @@ export default function Dashboard() {
   const [userWallet, setUserWallet] = useState('');
 
   useEffect(() => {
-    // Load user wallet from localStorage or Web3
-    const wallet = localStorage.getItem('walletAddress') || '';
-    setUserWallet(wallet);
+    // Use Microsoft account ID as user identifier
+    if (isAuthenticated && account) {
+      setUserWallet(account.localAccountId || account.homeAccountId || account.username || '');
+    } else {
+      // Fallback to localStorage wallet if not authenticated
+      const wallet = localStorage.getItem('walletAddress') || '';
+      setUserWallet(wallet);
+    }
     
     // Load user's artworks
     loadArtworks();
-  }, []);
+  }, [isAuthenticated, account]);
 
   const loadArtworks = async () => {
     // Fetch user's artworks from backend
@@ -42,6 +49,10 @@ export default function Dashboard() {
   };
 
   const handleGenerate = async () => {
+    if (!isAuthenticated) {
+      alert('Please login with Microsoft to generate artwork');
+      return;
+    }
     if (!prompt.trim()) {
       alert('Please enter a prompt');
       return;
@@ -86,6 +97,10 @@ export default function Dashboard() {
   };
 
   const handleImport = async (file: File) => {
+    if (!isAuthenticated) {
+      alert('Please login with Microsoft to import artwork');
+      return;
+    }
     setLoading(true);
     try {
       const fileData = await file.arrayBuffer();
@@ -147,8 +162,19 @@ export default function Dashboard() {
           </h1>
           <p className="text-base md:text-lg text-gray-400">Create verifiable AI-generated art with blockchain certification</p>
           <div className="mt-4 flex items-center space-x-2">
-            <CheckCircle className="text-green-400" size={20} />
-            <span className="text-sm text-gray-400">Wallet: {userWallet.substring(0, 10)}...{userWallet.substring(userWallet.length - 8)}</span>
+            {isAuthenticated ? (
+              <>
+                <CheckCircle className="text-green-400" size={20} />
+                <span className="text-sm text-gray-400">
+                  {account?.name || account?.username || 'Authenticated User'}
+                </span>
+              </>
+            ) : (
+              <>
+                <AlertCircle className="text-yellow-400" size={20} />
+                <span className="text-sm text-yellow-400">Please login to create artwork</span>
+              </>
+            )}
           </div>
         </header>
 
