@@ -35,6 +35,13 @@ api.interceptors.response.use(
 
 export const health = () => api.get('/health').then(r => r.data)
 export const verifyByKey = (key: string) => api.get('/verify', { params: { key } }).then(r => r.data)
+export const verifyByFile = (file: File) => {
+  const formData = new FormData()
+  formData.append('file', file)
+  return api.post('/verify/upload', formData, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  }).then(r => r.data)
+}
 
 export const createNode = (kind: string, author: string | undefined, body: any) =>
   api.post('/node', { kind, author, body }).then(r => r.data)

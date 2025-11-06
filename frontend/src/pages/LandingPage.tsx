@@ -278,7 +278,7 @@ export default function LandingPage() {
                 <img 
                   src="/pengwin.svg" 
                   alt="Pengwin" 
-                  className="w-64 h-64 md:w-80 md:h-80 lg:w-96 lg:h-96"
+                  className="w-80 h-80 md:w-96 md:h-96 lg:w-[28rem] lg:h-[28rem]"
                   style={{ 
                     position: 'relative', 
                     zIndex: 50,
