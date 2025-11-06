@@ -12,6 +12,7 @@ interface CapturedPath {
 interface StorageData {
     isCapturing?: boolean; 
     latestPath?: CapturedPath;
+    latestInteraction?: any;
 }
 
 interface ToggleResponse {
@@ -23,7 +24,7 @@ interface ExtensionState {
     isCapturing: boolean;
     statusMessage: string;
     dynamicDetail: string;
-    latestPath: string; 
+    latestInteractionText: string; 
 }
 
 const style = `
@@ -41,13 +42,14 @@ const style = `
   
   body {
     font-family: var(--font-stack);
-    width: 380px; /* Bigger size */
-    padding: 20px;
+    width: 440px; /* Slightly reduced width */
+    padding: 22px;
     /* Gradient Background: Dark to Light Purple */
     background: linear-gradient(135deg, var(--purple-dark) 0%, var(--purple-main) 60%, var(--purple-light) 100%);
     color: var(--text-color-light); /* White text color for the background */
-    border-radius: 12px; /* Rounded borders */
-    box-shadow: 0 8px 16px rgba(0,0,0,0.2);
+    border-radius: 16px; /* More rounded corners */
+    box-shadow: 0 10px 18px rgba(0,0,0,0.25);
+    min-height: 720px; /* Increased height */
   }
   
   h2 {
@@ -63,7 +65,7 @@ const style = `
   button {
     padding: 12px;
     border: none;
-    border-radius: 8px; 
+    border-radius: 10px; 
     cursor: pointer;
     font-weight: bold;
     transition: all 0.2s ease-in-out;
@@ -100,7 +102,7 @@ const style = `
   .status-area {
     padding: 15px;
     margin-top: 20px;
-    border-radius: 12px;
+    border-radius: 14px;
     background-color: rgba(255, 255, 255, 0.95);
     color: var(--text-color-dark);
     text-align: left;
@@ -114,37 +116,41 @@ const style = `
     font-weight: 500;
   }
 
-  .path-display-container {
+  .json-display-container {
       margin-top: 15px;
   }
 
-  .path-display-container p {
+  .json-display-container p {
       color: white;
       font-weight: 600;
   }
 
-  .path-display {
+  .json-display {
     margin-top: 5px;
     padding: 12px;
     background-color: rgba(255, 255, 255, 0.95);
-    border-radius: 8px;
+    border-radius: 10px;
     font-family: monospace;
-    font-size: 0.85em;
-    word-break: break-all;
+    font-size: 10px;
+    word-break: break-word;
     display: block;
-    min-height: 20px;
+    min-height: 220px; /* Increased display height */
+    max-height: 520px; /* More room */
+    overflow: auto;
     color: var(--text-color-dark);
     box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
+    white-space: pre-wrap; /* Preserve new lines */
   }
 
   .button-group {
     display: flex;
     justify-content: space-between;
+    gap: 10px;
     margin-top: 15px;
   }
 
   .button-group button {
-    width: 49%;
+    flex: 1 1 auto;
   }
 
   .copy-button {
@@ -153,33 +159,38 @@ const style = `
     width: 100%;
     margin-top: 12px;
     background-image: linear-gradient(to bottom right, #7986CB, var(--info-color));
-  }
-
-  .storage-info {
-      margin-top: 20px;
-      font-size: 0.8em;
-      color: #f0f0f0;
-      text-align: center;
-      padding: 8px;
-      background-color: rgba(0, 0, 0, 0.3);
-      border-radius: 8px;
+    border-radius: 10px;
   }
 `;
 
 const App: React.FC = () => {
-    const getStatusDetails = (isCapturing: boolean, latestPath: string) => ({
+    const getStatusDetails = (isCapturing: boolean) => ({
         statusMessage: isCapturing ? "Monitoring Active 🟢" : "Monitoring Stopped 🛑",
-        dynamicDetail: isCapturing ? "Click anywhere on the page to capture its DOM path." : "Click Start to begin monitoring clicks.",
-        latestPath: latestPath 
+        dynamicDetail: isCapturing ? "Capturing latest prompt/output + media." : "Click Start to begin monitoring."
     });
 
     const [state, setState] = useState<ExtensionState>({
         isCapturing: false,
         statusMessage: "Loading...",
         dynamicDetail: "Waiting for extension state.",
-        latestPath: "No path captured." 
+        latestInteractionText: "No interaction captured."
     });
 
+    const orderKeys = (obj: any) => {
+        if (!obj || typeof obj !== 'object') return obj;
+        const ordered: any = {};
+        const keys = ['url','input','output','modal-version','timestamp'];
+        keys.forEach(k => { if (obj[k] !== undefined) ordered[k] = obj[k]; });
+        // Append any other fields deterministically
+        Object.keys(obj).sort().forEach(k => {
+            if (!(k in ordered)) ordered[k] = obj[k];
+        });
+        return ordered;
+    };
+
+    const pretty = (obj: any) => {
+        try { return JSON.stringify(orderKeys(obj), null, 2); } catch { return String(obj ?? ''); }
+    };
 
     useEffect(() => {
         if (typeof chrome === 'undefined' || !chrome.storage) {
@@ -187,18 +198,18 @@ const App: React.FC = () => {
             return;
         }
 
-        chrome.storage.local.get(['isCapturing', 'latestPath'], (result: StorageData) => {
+        chrome.storage.local.get(['isCapturing', 'latestInteraction'], (result: StorageData) => {
             const initialCapturing = result.isCapturing || false;
-            const pathText = result.latestPath?.path || "No path captured.";
-            
+            const latestText = result.latestInteraction ? pretty(result.latestInteraction) : "No interaction captured.";
             setState(s => ({ 
                 ...s,
                 isCapturing: initialCapturing,
-                ...getStatusDetails(initialCapturing, pathText)
+                ...getStatusDetails(initialCapturing),
+                latestInteractionText: latestText
             }));
         });
         
-        const pathListener = (changes: { [key: string]: chrome.storage.StorageChange }, namespace: string) => {
+        const storageListener = (changes: { [key: string]: chrome.storage.StorageChange }, namespace: string) => {
             if (namespace !== 'local') return;
 
             setState(s => {
@@ -207,16 +218,16 @@ const App: React.FC = () => {
                 if (changes.isCapturing) {
                     const newCapturingState = changes.isCapturing.newValue as boolean;
                     newState.isCapturing = newCapturingState;
-                    const details = getStatusDetails(newCapturingState, newState.latestPath);
+                    const details = getStatusDetails(newCapturingState);
                     newState.statusMessage = details.statusMessage;
                     newState.dynamicDetail = details.dynamicDetail;
                 }
 
-                if (changes.latestPath) {
-                    const newPath: CapturedPath = changes.latestPath.newValue as CapturedPath;
-                    newState.latestPath = newPath.path;
+                if (changes.latestInteraction) {
+                    const li = changes.latestInteraction.newValue;
+                    newState.latestInteractionText = pretty(li);
                     if (newState.isCapturing) {
-                        newState.dynamicDetail = `New path captured from: ${newPath.url.substring(0, 40)}...`;
+                        newState.dynamicDetail = `New interaction from: ${li?.url || ''}`.trim();
                     }
                 }
                 
@@ -224,10 +235,10 @@ const App: React.FC = () => {
             });
         };
 
-        chrome.storage.onChanged.addListener(pathListener);
+        chrome.storage.onChanged.addListener(storageListener);
 
         return () => {
-            chrome.storage.onChanged.removeListener(pathListener);
+            chrome.storage.onChanged.removeListener(storageListener);
         };
     }, []); 
 
@@ -246,55 +257,39 @@ const App: React.FC = () => {
         }, (response: ToggleResponse) => {
             if (!response || !response.success) {
                 console.error("Toggle failed:", chrome.runtime.lastError || (response && response.error));
-                chrome.storage.local.get('isCapturing', (result: { isCapturing?: boolean; latestPath?: CapturedPath }) => {
+                chrome.storage.local.get(['isCapturing','latestInteraction'], (result: StorageData) => {
                     const errorDetail = response?.error || "Check console for errors. State reverted.";
-                    const pathText = result.latestPath?.path || "No path captured.";
+                    const latestText = result.latestInteraction ? pretty(result.latestInteraction) : state.latestInteractionText;
                     setState(prev => ({ 
                         ...prev, 
                         isCapturing: result.isCapturing || false,
                         statusMessage: "Action Failed 🔴", 
                         dynamicDetail: errorDetail,
-                        latestPath: pathText
+                        latestInteractionText: latestText
                     }));
                 });
             }
         });
     };
 
-    const copyPath = () => {
-        const path = state.latestPath;
-        if (path && path !== "No path captured.") {
+    const copyJson = () => {
+        const text = state.latestInteractionText;
+        if (text && text !== "No interaction captured.") {
             const tempInput = document.createElement('textarea');
-            tempInput.value = path;
+            tempInput.value = text;
             document.body.appendChild(tempInput);
             tempInput.select();
-            
             let success = false;
-            try {
-                success = document.execCommand('copy'); 
-            } catch (err) {
-                console.error('Copy failed using execCommand:', err);
-            }
-            
+            try { success = document.execCommand('copy'); } catch {}
             document.body.removeChild(tempInput);
-
-            if (success) {
-                setState(s => ({ ...s, dynamicDetail: "Path copied to clipboard!" }));
-                setTimeout(() => {
-                    const { dynamicDetail: revertDetail } = getStatusDetails(state.isCapturing, state.latestPath);
-                    setState(s => ({ ...s, dynamicDetail: revertDetail }));
-                }, 2000); 
-            } else {
-                 setState(s => ({ ...s, dynamicDetail: "Copy failed. Cannot access clipboard." }));
-            }
+            setState(s => ({ ...s, dynamicDetail: success ? "JSON copied to clipboard!" : "Copy failed." }));
         }
     };
-
 
     return (
         <>
             <style>{style}</style>
-            <h2>DOM Path Click Monitor</h2>
+            <h2>Proof-of-Art</h2>
             <div className="button-group">
                 <button 
                     id="start-button" 
@@ -317,17 +312,17 @@ const App: React.FC = () => {
                 <p className="dynamic-text">Detail: {state.dynamicDetail}</p>
             </div>
 
-            <div className="path-display-container">
-                <p style={{marginTop: '15px'}}>Last Clicked Path:</p>
-                <code className="path-display">
-                    {state.latestPath}
+            <div className="json-display-container">
+                <p style={{marginTop: '15px'}}>Latest Interaction JSON:</p>
+                <code className="json-display">
+                    {state.latestInteractionText}
                 </code>
-                 <button 
-                    onClick={copyPath}
-                    disabled={state.latestPath === "No path captured."}
+                <button 
+                    onClick={copyJson}
+                    disabled={state.latestInteractionText === "No interaction captured."}
                     className="copy-button"
                 >
-                    Copy Path
+                    Copy JSON
                 </button>
             </div>
         </>
