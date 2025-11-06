@@ -136,24 +136,13 @@ function cleanText(raw: string | null | undefined): string | null {
 function extractLatestUserPrompt(provider: Provider): string | null {
 	switch (provider) {
 		case "chatgpt": {
-			// Prefer explicit markdown within the last user turn
-			const turn = Array.from(document.querySelectorAll('[data-testid="conversation-turn-user"]')).pop() as HTMLElement | undefined;
-			if (turn) {
-				const md = Array.from(turn.querySelectorAll('[data-testid="markdown"], .markdown, .prose, p')) as HTMLElement[];
-				for (let i = md.length - 1; i >= 0; i--) {
-					const txt = cleanText(md[i].innerText || md[i].textContent);
-					if (txt) return txt;
-				}
-				const fallback = cleanText(turn.innerText || turn.textContent);
-				if (fallback) return fallback;
-			}
-			// Secondary: any user message markdown
-			const anyUser = Array.from(document.querySelectorAll('[data-message-author-role="user"] [data-testid="markdown"], [data-testid="user-message"] [data-testid="markdown"], [data-message-author-role="user"] .markdown')) as HTMLElement[];
-			const lastMd = anyUser.pop();
-			if (lastMd) return cleanText(lastMd.innerText || lastMd.textContent);
-			// Fallback to current textbox
-			const ta = document.querySelector('[data-testid="prompt-textarea"], textarea, [role="textbox"][contenteditable="true"], [contenteditable="true"][data-testid="textbox"]');
-			return cleanText(((ta as HTMLTextAreaElement | null)?.value || (ta as HTMLElement | null)?.innerText));
+			// Prefer the last explicit user turn container
+			const turnNodes = Array.from(document.querySelectorAll('[data-testid="conversation-turn-user"], [data-message-author-role="user"], [data-testid="user-message"]')) as HTMLElement[];
+			const lastUserMsg = turnNodes.pop();
+			if (lastUserMsg) return lastUserMsg.innerText.trim() || lastUserMsg.textContent?.trim() || null;
+			// Fallback to the input area
+			const ta = document.querySelector('textarea, [data-testid="prompt-textarea"], [role="textbox"][contenteditable="true"], [contenteditable="true"][data-testid="textbox"]');
+			return ((ta as HTMLTextAreaElement | null)?.value || (ta as HTMLElement | null)?.innerText || '').trim() || null;
 		}
 		case "claude": {
 			const lastUserMsg = Array.from(document.querySelectorAll('[data-cy="message"][data-author="user"], [data-testid="user-message"]')).pop() as HTMLElement | undefined;
@@ -162,7 +151,6 @@ function extractLatestUserPrompt(provider: Provider): string | null {
 			return (ce as HTMLElement | null)?.innerText?.trim() || null;
 		}
 		case "gemini": {
-			// Prefer Gemini custom elements; deep text to traverse shadow roots
 			const candidates = [
 				'user-query user-query-content',
 				'user-query-content',
@@ -182,11 +170,13 @@ function extractLatestUserPrompt(provider: Provider): string | null {
 			return fallback || null;
 		}
 		case "perplexity": {
-			const lastUserMsg = Array.from(document.querySelectorAll('[data-author="user"], .message.user'))
+			// Prefer last explicit user bubble or lexical editor text span
+			const lastUserMsg = Array.from(document.querySelectorAll('[data-author="user"], .message.user, [data-testid="chat-message-user"], [data-testid^="chat-message-"][data-role="user"], article[aria-label*="You"], span[data-lexical-text="true"]'))
 				.pop() as HTMLElement | undefined;
-			if (lastUserMsg) return lastUserMsg.innerText.trim() || lastUserMsg.textContent?.trim() || null;
-			const ta = document.querySelector('textarea');
-			return (ta as HTMLTextAreaElement | null)?.value?.trim() || null;
+			if (lastUserMsg) return (lastUserMsg.innerText || lastUserMsg.textContent || '').trim() || null;
+			// Fallback to active editor
+			const ta = document.querySelector('[data-testid="prompt-editor"] textarea, [data-testid^="chat-input"] textarea, textarea[placeholder*="Ask" i], textarea[placeholder*="Type" i], textarea, [contenteditable="true"][role="textbox"], [contenteditable="true"][data-testid*="editor"]');
+			return ((ta as HTMLTextAreaElement | null)?.value || (ta as HTMLElement | null)?.innerText || '').trim() || null;
 		}
 		default:
 			const ta = document.querySelector('textarea');
@@ -197,14 +187,9 @@ function extractLatestUserPrompt(provider: Provider): string | null {
 function extractLatestAssistantOutput(provider: Provider): string | null {
 	switch (provider) {
 		case "chatgpt": {
-			// Prefer assistant markdown content
-			const md = Array.from(document.querySelectorAll('[data-message-author-role="assistant"] [data-testid="markdown"], [data-testid="assistant-message"] [data-testid="markdown"], [data-message-author-role="assistant"] .markdown')) as HTMLElement[];
-			const last = md.pop();
-			if (last) return cleanText(last.innerText || last.textContent);
-			// Fallback to assistant turn container
-			const container = Array.from(document.querySelectorAll('[data-message-author-role="assistant"], [data-testid="assistant-message"]'))
+			const lastAssistant = Array.from(document.querySelectorAll('[data-message-author-role="assistant"], [data-testid="assistant-message"], [data-testid*="assistant-turn"], .markdown'))
 				.pop() as HTMLElement | undefined;
-			return cleanText(container?.innerText || container?.textContent);
+			return lastAssistant?.innerText?.trim() || lastAssistant?.textContent?.trim() || null;
 		}
 		case "claude": {
 			const lastAssistant = Array.from(document.querySelectorAll('[data-cy="message"][data-author="assistant"], [data-testid="assistant-message"], .message .prose, .message .content'))
@@ -212,7 +197,6 @@ function extractLatestAssistantOutput(provider: Provider): string | null {
 			return lastAssistant?.innerText?.trim() || lastAssistant?.textContent?.trim() || null;
 		}
 		case "gemini": {
-			// Use deep text on key containers
 			const containers = [
 				'[id^="model-response-message-content"]',
 				'model-response',
@@ -233,9 +217,17 @@ function extractLatestAssistantOutput(provider: Provider): string | null {
 			return null;
 		}
 		case "perplexity": {
-			const lastAssistant = Array.from(document.querySelectorAll('.prose, [data-testid="response"], .answer'))
-				.pop() as HTMLElement | undefined;
-			return lastAssistant?.innerText?.trim() || lastAssistant?.textContent?.trim() || null;
+			// Prefer markdown/prose, else derive text from media alt
+			const candidates = Array.from(document.querySelectorAll('[data-testid="chat-message-assistant"] [data-testid="markdown"], [data-testid="chat-message"] [data-testid="markdown"], [data-testid^="chat-message-"] [data-testid="markdown"], .prose, [data-testid="response"], .answer, article[aria-label*="Answer"], article .prose')) as HTMLElement[];
+			for (let i = candidates.length - 1; i >= 0; i--) {
+				const node = candidates[i];
+				const deep = getDeepText(node);
+				if (deep) return deep;
+			}
+			// If only image, use its alt text as output text
+			const img = document.querySelector('img[src*="user-gen-media-assets" i]') as HTMLImageElement | null;
+			if (img && (img.alt || '').trim()) return img.alt.trim();
+			return null;
 		}
 		default:
 			const article = Array.from(document.querySelectorAll('article, .markdown, .prose')).pop() as HTMLElement | undefined;
@@ -251,7 +243,6 @@ function getLatestAssistantContext(provider: Provider): { text: string | null; c
 			const deep = getDeepText(node);
 			if (deep) return { text: deep, container: node };
 		}
-		// If no text nodes (e.g., pure image response), still return the latest container
 		const last = nodes[nodes.length - 1] || null;
 		return { text: last ? '' : null, container: last };
 	};
@@ -264,7 +255,7 @@ function getLatestAssistantContext(provider: Provider): { text: string | null; c
 		case "gemini":
 			return pick(Array.from(document.querySelectorAll('[id^="model-response-message-content"], model-response, model-response .response, response-element rich-text, rich-text, [data-message-author="model"], article[aria-label*="Gemini"] .response, article .markdown')) as HTMLElement[]);
 		case "perplexity":
-			return pick(Array.from(document.querySelectorAll('.prose, [data-testid="response"], .answer')) as HTMLElement[]);
+			return pick(Array.from(document.querySelectorAll('[data-testid="chat-message-assistant"], [data-testid="chat-message"], [data-testid^="chat-message-"], .prose, [data-testid="response"], .answer, article[aria-label*="Answer"], article .prose, figure, img[src*="user-gen-media-assets" i]')) as HTMLElement[]);
 		default:
 			return pick(Array.from(document.querySelectorAll('article, .markdown, .prose')) as HTMLElement[]);
 	}
@@ -369,8 +360,10 @@ let geminiInterval: number | null = null;
 async function emitInteraction(provider: Provider) {
 	const ctx = getLatestAssistantContext(provider);
 	const outputText = ctx.text;
-	if (!outputText) return;
-	const signature = outputText.slice(0, 200);
+	// For pure-media replies, text can be empty; proceed if we at least have a container
+	if (!outputText && !ctx.container) return;
+	const sigSource = outputText && outputText.length > 0 ? outputText : (ctx.container?.innerHTML || '');
+	const signature = sigSource.slice(0, 200);
 	if (lastOutputSignature === signature) return;
 	lastOutputSignature = signature;
 
@@ -380,8 +373,22 @@ async function emitInteraction(provider: Provider) {
 
 	const attachments = await collectAttachmentsFrom(ctx.container);
 
+	// Perplexity fallback: if no attachments from container, scan global generated media images
+	if (attachments.length === 0 && provider === 'perplexity') {
+		const globalImgs = Array.from(document.querySelectorAll('img[src*="user-gen-media-assets" i]')) as HTMLImageElement[];
+		for (const img of globalImgs) {
+			const url = (img.currentSrc || img.src || '').trim();
+			if (!url) continue;
+			// Skip inlining; keep only URL/mime/filename
+			attachments.push({ type: "image", url, filename: (img.alt || '').trim() || undefined });
+		}
+	}
+
+	// Remove dataUrl fields before emitting
+	const attachmentsSanitized = attachments.map(a => ({ type: a.type, url: a.url, mime: a.mime, filename: a.filename }));
+
 	// Prefer media as output; if none, fall back to text
-	const output: any = attachments.length > 0 ? attachments : outputText;
+	const output: any = attachmentsSanitized.length > 0 ? attachmentsSanitized : (outputText || '');
 
 	const interaction = {
 		url,
@@ -406,12 +413,23 @@ function startScraping() {
 	if (observer) { observer.disconnect(); observer = null; }
 	if (geminiInterval !== null) { window.clearInterval(geminiInterval); geminiInterval = null; }
 
-	if (provider === 'gemini') {
-		// Poll because much of Gemini's UI lives in shadow DOMs that MutationObserver won't see
-		geminiInterval = window.setInterval(() => emitInteraction(provider), 1200);
+	if (provider === 'gemini' || provider === 'perplexity') {
+		// Poll because significant UI may live in shadow DOM or virtualized trees
+		emitInteraction(provider); // immediate attempt
+		geminiInterval = window.setInterval(() => emitInteraction(provider), 800);
+
+		if (provider === 'perplexity') {
+			try {
+				const userCnt = document.querySelectorAll('[data-author="user"], .message.user, [data-testid="chat-message-user"], [data-testid^="chat-message-"][data-role="user"], article[aria-label*="You"], span[data-lexical-text="true"]').length;
+				const asstCnt = document.querySelectorAll('[data-testid="chat-message-assistant"], [data-testid="chat-message"], [data-testid^="chat-message-"], .prose, [data-testid="response"], .answer, article[aria-label*="Answer"], article .prose, figure, img[src*="user-gen-media-assets" i]').length;
+				const genImgs = document.querySelectorAll('img[src*="user-gen-media-assets" i]').length;
+				console.log(`[Perplexity Debug] userCandidates=${userCnt}, assistantCandidates=${asstCnt}, generatedImgs=${genImgs}`);
+			} catch {}
+		}
 		return;
 	}
 
+	emitInteraction(provider); // immediate attempt
 	observer = new MutationObserver(() => emitInteraction(provider));
 	observer.observe(document.body, { childList: true, subtree: true, characterData: true });
 }
