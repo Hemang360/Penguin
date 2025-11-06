@@ -158,7 +158,7 @@ export default function Dashboard() {
       <div className="max-w-6xl mx-auto px-4 py-10">
         <header className="mb-12">
           <h1 className="text-4xl md:text-5xl font-bold mb-3 bg-gradient-to-r from-fuchsia-500 to-cyan-500 bg-clip-text text-transparent">
-            Proof-of-Art Studio
+            PengWin
           </h1>
           <p className="text-base md:text-lg text-gray-400">Create verifiable AI-generated art with blockchain certification</p>
           <div className="mt-4 flex items-center space-x-2">

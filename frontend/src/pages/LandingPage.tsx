@@ -244,7 +244,7 @@ export default function LandingPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, ease: 'easeOut', delay: 0.35 }}
                 >
-                  Proof-of-Art lets you generate, import, and verify AI artwork with on-chain proofs and IPFS-backed storage.
+                  PengWin lets you generate, import, and verify AI artwork with on-chain proofs and IPFS-backed storage.
                 </motion.p>
                 <motion.div
                   className="mt-8 flex items-center gap-3"
@@ -374,7 +374,7 @@ export default function LandingPage() {
       </main>
 
       <footer className="py-8 text-center text-xs text-gray-600">
-        © {new Date().getFullYear()} Proof-of-Art
+        © {new Date().getFullYear()} PengWin
       </footer>
     </div>
   )
