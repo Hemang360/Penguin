@@ -40,6 +40,23 @@ func (db *IPFSDB) ListKeys() []string {
 	return keys
 }
 
+// FindUserByAuthenticatorID retrieves a user by their Microsoft Authenticator ID
+func (db *IPFSDB) FindUserByAuthenticatorID(authID string) (*models.User, bool) {
+	// In a real database (like Mongo), you'd run a query:
+	// db.Collection("users").FindOne(ctx, bson.M{"authenticator_id": authID})
+	
+	// For the mock IPFSDB, we must iterate:
+	for _, val := range db.store {
+		// Only check items that are models.User
+		if user, ok := val.(*models.User); ok {
+			if user.AuthenticatorID == authID {
+				return user, true
+			}
+		}
+	}
+	return nil, false
+}
+
 // StorageService provides storage operations for artwork
 type StorageService struct {
 	db     *IPFSDB

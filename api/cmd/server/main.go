@@ -97,13 +97,15 @@ func main() {
 	e.GET("/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
-	e.GET("/verify", h.Verify)
-	e.GET("/verify/:id", api.VerifyArtwork)
-	e.GET("/certificate/:id", api.GetCertificate)
 
 	// Protected endpoints (require Microsoft authentication)
 	protected := e.Group("")
-	protected.Use(auth.JWTAuthMiddleware())
+	protected.Use(auth.JWTAuthMiddleware(db))
+
+	// Verification endpoints - now require authentication
+	protected.GET("/verify", h.Verify)
+	protected.GET("/verify/:id", api.VerifyArtwork)
+	protected.GET("/certificate/:id", api.GetCertificate)
 
 	// Core endpoints (node/artifact flow) - protected
 	protected.POST("/ext/push", h.ExtPush)

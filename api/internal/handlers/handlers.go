@@ -83,14 +83,21 @@ func (h *Handler) GenerateArt(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	// Get authenticated user ID from JWT token
-	userID, ok := auth.GetUserIDFromContext(c)
+	// Get authenticated user from context
+	user, ok := auth.GetDBUserFromContext(c)
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not authenticated"})
 	}
 
 	// Override UserID from request with authenticated user ID (security: prevent user ID spoofing)
-	req.UserID = userID
+	req.UserID = user.ID
+
+	// Validate user has a wallet address set
+	if user.WalletAddress == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "wallet address not set. Please update your profile with a wallet address.",
+		})
+	}
 
 	// Call model provider API with temperature=0 for reproducibility
 	artworkData, err := h.callLLMAPI(req.LLMProvider, req.Prompt, req.ContentType, req.Parameters)
@@ -99,8 +106,8 @@ func (h *Handler) GenerateArt(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
-	// Process and watermark the artwork
-	artwork, certificate, err := h.processArtwork(c.Request().Context(), req.UserID, req.Prompt, artworkData, req.ContentType, req.LLMProvider)
+	// Process and watermark the artwork - use user ID and wallet address
+	artwork, certificate, err := h.processArtwork(c.Request().Context(), user.ID, user.WalletAddress, req.Prompt, artworkData, req.ContentType, req.LLMProvider)
 	if err != nil {
 		c.Logger().Errorf("failed to process artwork in GenerateArt: %v", err) // Added logging
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -119,19 +126,27 @@ func (h *Handler) ImportArt(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	// Get authenticated user ID from JWT token
-	userID, ok := auth.GetUserIDFromContext(c)
+	// Get authenticated user from context
+	user, ok := auth.GetDBUserFromContext(c)
 	if !ok {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not authenticated"})
 	}
 
 	// Override UserID from request with authenticated user ID (security: prevent user ID spoofing)
-	req.UserID = userID
+	req.UserID = user.ID
 
-	// Process imported artwork
+	// Validate user has a wallet address set
+	if user.WalletAddress == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "wallet address not set. Please update your profile with a wallet address.",
+		})
+	}
+
+	// Process imported artwork - use user ID and wallet address
 	artwork, certificate, err := h.processArtwork(
 		c.Request().Context(),
-		req.UserID,
+		user.ID,
+		user.WalletAddress,
 		req.Prompt,
 		req.FileData,
 		req.ContentType,
@@ -150,7 +165,8 @@ func (h *Handler) ImportArt(c echo.Context) error {
 }
 
 // processArtwork handles the complete watermarking and storage pipeline
-func (h *Handler) processArtwork(ctx context.Context, userID, prompt string, artworkData []byte, contentType, provider string) (*models.Artwork, *models.ProofCertificate, error) {
+// userID is the database user ID, walletAddress is the user's wallet address
+func (h *Handler) processArtwork(ctx context.Context, userID, walletAddress, prompt string, artworkData []byte, contentType, provider string) (*models.Artwork, *models.ProofCertificate, error) {
 	// 1. Hash the prompt
 	promptHash := crypto.HashPrompt(prompt)
 
@@ -208,7 +224,7 @@ func (h *Handler) processArtwork(ctx context.Context, userID, prompt string, art
 	artworkID := uuid.New().String()
 	metadata := &ipfsdb.DAGMetadata{
 		ArtworkID:      artworkID,
-		ArtistWallet:   userID,
+		ArtistWallet:   walletAddress, // Use actual wallet address
 		PublicKey:      publicKey,
 		PromptHash:     promptHash,
 		ContentHash:    watermarkedHash,
@@ -251,7 +267,7 @@ func (h *Handler) processArtwork(ctx context.Context, userID, prompt string, art
 	certificate := &models.ProofCertificate{
 		CertificateID:    uuid.New().String(),
 		ArtworkID:        artworkID,
-		ArtistWallet:     userID,
+		ArtistWallet:     walletAddress, // Use actual wallet address
 		Prompt:           prompt,
 		PromptHash:       promptHash,
 		ContentHash:      watermarkedHash,
@@ -845,9 +861,21 @@ func (h *Handler) UploadManifest(c echo.Context) error {
 	ctx, cancel := context.WithTimeout(c.Request().Context(), 60*time.Second)
 	defer cancel()
 
+	// Get authenticated user from context
+	user, ok := auth.GetDBUserFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not authenticated"})
+	}
+
+	// Validate user has a wallet address set
+	if user.WalletAddress == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "wallet address not set. Please update your profile with a wallet address.",
+		})
+	}
+
 	var req struct {
 		ImageCID    string            `json:"image_cid"`
-		Creator     string            `json:"creator"` // wallet address
 		Prompt      string            `json:"prompt"`
 		Model       string            `json:"model"`
 		Origin      string            `json:"origin"`
@@ -864,14 +892,11 @@ func (h *Handler) UploadManifest(c echo.Context) error {
 	if req.ImageCID == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "image_cid is required"})
 	}
-	if req.Creator == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "creator is required"})
-	}
 
-	// Create manifest JSON
+	// Create manifest JSON - use authenticated user's wallet address
 	manifest := map[string]interface{}{
 		"image_cid":  req.ImageCID,
-		"creator":    req.Creator,
+		"creator":    user.WalletAddress, // Use authenticated user's wallet address
 		"prompt":     req.Prompt,
 		"model":      req.Model,
 		"origin":     req.Origin,

@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -10,6 +11,9 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/lestrrat-go/jwx/v2/jwk"
 	"github.com/lestrrat-go/jwx/v2/jwt"
+
+	"yourproject/internal/ipfsdb"
+	"yourproject/internal/models"
 )
 
 // UserInfo contains the authenticated user information extracted from the JWT
@@ -84,8 +88,9 @@ func ValidateMicrosoftJWT(tokenString string) (*UserInfo, error) {
 	return userInfo, nil
 }
 
-// JWTAuthMiddleware is an Echo middleware that validates Microsoft JWT tokens
-func JWTAuthMiddleware() echo.MiddlewareFunc {
+// JWTAuthMiddleware is an Echo middleware that validates Microsoft JWT tokens,
+// automatically provisions users on first login, and attaches the User model to context
+func JWTAuthMiddleware(db *ipfsdb.IPFSDB) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			// Get the Authorization header
@@ -114,9 +119,35 @@ func JWTAuthMiddleware() echo.MiddlewareFunc {
 				})
 			}
 
-			// Store user info in context for handlers to use
-			c.Set("user", userInfo)
-			c.Set("user_id", userInfo.UserID)
+			// Extract AuthenticatorID (Microsoft user ID)
+			authenticatorID := userInfo.UserID
+			if authenticatorID == "" {
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error": "token missing user identifier",
+				})
+			}
+
+			// Check if user exists in database
+			user, found := db.FindUserByAuthenticatorID(authenticatorID)
+
+			if !found {
+				// User doesn't exist - automatically provision them
+				log.Printf("🆕 Provisioning new user with AuthenticatorID: %s", authenticatorID)
+				newUser, err := ProvisionNewUser(db, authenticatorID, userInfo)
+				if err != nil {
+					c.Logger().Errorf("failed to provision new user: %v", err)
+					return c.JSON(http.StatusInternalServerError, map[string]string{
+						"error": "failed to provision user account",
+					})
+				}
+				user = newUser
+				log.Printf("✅ User provisioned successfully: ID=%s, AuthenticatorID=%s", user.ID, user.AuthenticatorID)
+			}
+
+			// Store both UserInfo (from JWT) and User model (from DB) in context
+			c.Set("user", userInfo)           // Keep for backward compatibility
+			c.Set("user_id", userInfo.UserID)  // Keep for backward compatibility
+			c.Set("db_user", user)             // New: Full User model with PublicKey, WalletAddress, etc.
 
 			return next(c)
 		}
@@ -170,4 +201,11 @@ func GetUserFromContext(c echo.Context) (*UserInfo, bool) {
 func GetUserIDFromContext(c echo.Context) (string, bool) {
 	userID, ok := c.Get("user_id").(string)
 	return userID, ok
+}
+
+// GetDBUserFromContext extracts the User model from Echo context
+// This is the preferred method for handlers that need access to PublicKey, WalletAddress, etc.
+func GetDBUserFromContext(c echo.Context) (*models.User, bool) {
+	user, ok := c.Get("db_user").(*models.User)
+	return user, ok
 }
