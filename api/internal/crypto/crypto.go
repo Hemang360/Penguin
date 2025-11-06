@@ -7,6 +7,8 @@ import (
     "encoding/base64"
     "encoding/json"
     "fmt"
+    "image"
+    "image/color"
 
     "github.com/zeebo/blake3"
 )
@@ -90,6 +92,137 @@ func (s *Signer) VerifyDetached(jws string, payload []byte) bool {
     signingInput := []byte(headerB64 + "." + ".")
     signingInput = append(signingInput, payload...)
     return ed25519.Verify(s.publicKey, signingInput, sig)
+}
+
+// KeyPair represents an Ed25519 key pair
+type KeyPair struct {
+	PublicKey  []byte
+	PrivateKey []byte
+}
+
+// GenerateKeyPair generates a new Ed25519 key pair
+func GenerateKeyPair() (*KeyPair, error) {
+	pub, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	return &KeyPair{
+		PublicKey:  pub,
+		PrivateKey: priv,
+	}, nil
+}
+
+// HashPrompt hashes a prompt string using BLAKE3
+func HashPrompt(prompt string) string {
+	return Blake3Hex([]byte(prompt))
+}
+
+// HashFile hashes file data using BLAKE3
+func HashFile(data []byte) string {
+	return Blake3Hex(data)
+}
+
+// NoisePattern represents a unique noise pattern for watermarking
+type NoisePattern struct {
+	Pattern  []byte
+	Signature string
+}
+
+// GenerateNoisePattern generates a unique noise pattern for a user
+func GenerateNoisePattern(userID string, width, height int) (*NoisePattern, error) {
+	// Generate deterministic noise based on userID
+	seed := Blake3Hex([]byte(userID))
+	pattern := make([]byte, width*height*4) // RGBA
+	
+	// Simple deterministic pattern generation
+	hash := Blake3Hex([]byte(seed))
+	for i := 0; i < len(pattern); i++ {
+		pattern[i] = hash[i%len(hash)]
+	}
+	
+	return &NoisePattern{
+		Pattern:   pattern,
+		Signature: seed,
+	}, nil
+}
+
+// ApplyWatermark applies a watermark to an image
+func ApplyWatermark(img image.Image, pattern *NoisePattern, publicKey string) (image.Image, error) {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+	
+	// Create new RGBA image
+	watermarked := image.NewRGBA(bounds)
+	
+	// Copy original image
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			watermarked.Set(x, y, img.At(x, y))
+		}
+	}
+	
+	// Apply subtle watermark (LSB steganography)
+	keyBytes := []byte(publicKey)
+	for y := 0; y < height && y < len(pattern.Pattern)/width/4; y++ {
+		for x := 0; x < width && x < len(pattern.Pattern)/height/4; x++ {
+			idx := (y*width + x) * 4
+			if idx < len(pattern.Pattern) {
+				// Modify LSB of each channel
+				r, g, b, a := watermarked.At(x, y).RGBA()
+				patternByte := pattern.Pattern[idx%len(pattern.Pattern)]
+				keyByte := keyBytes[idx%len(keyBytes)]
+				
+				// Apply subtle changes
+				newR := uint8((r>>8)&0xFE) | (patternByte & 0x01)
+				newG := uint8((g>>8)&0xFE) | ((keyByte >> 1) & 0x01)
+				newB := uint8((b>>8)&0xFE) | ((keyByte >> 2) & 0x01)
+				
+				watermarked.SetRGBA(x, y, color.RGBA{
+					R: newR,
+					G: newG,
+					B: newB,
+					A: uint8(a >> 8),
+				})
+			}
+		}
+	}
+	
+	return watermarked, nil
+}
+
+// DetectWatermark detects a watermark in an image
+func DetectWatermark(img image.Image, expectedPattern *NoisePattern, threshold float64) (bool, float64) {
+	bounds := img.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+	
+	matches := 0
+	total := 0
+	
+	pattern := expectedPattern.Pattern
+	for y := 0; y < height && y < len(pattern)/width/4; y++ {
+		for x := 0; x < width && x < len(pattern)/height/4; x++ {
+			idx := (y*width + x) * 4
+			if idx < len(pattern) {
+                r, _, _, _ := img.At(x, y).RGBA()
+				expectedLSB := pattern[idx%len(pattern)] & 0x01
+				
+				actualLSB := uint8(r>>8) & 0x01
+				if actualLSB == expectedLSB {
+					matches++
+				}
+				total++
+			}
+		}
+	}
+	
+	if total == 0 {
+		return false, 0.0
+	}
+	
+	confidence := float64(matches) / float64(total)
+	return confidence >= threshold, confidence
 }
 
 
