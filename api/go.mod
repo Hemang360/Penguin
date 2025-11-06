@@ -12,9 +12,11 @@ require (
 	github.com/labstack/echo/v4 v4.11.4
 	github.com/zeebo/blake3 v0.2.3
 	golang.org/x/image v0.32.0
+	golang.org/x/oauth2 v0.32.0
 )
 
 require (
+	cloud.google.com/go/compute/metadata v0.3.0 // indirect
 	github.com/Microsoft/go-winio v0.6.1 // indirect
 	github.com/StackExchange/wmi v1.2.1 // indirect
 	github.com/bits-and-blooms/bitset v1.7.0 // indirect

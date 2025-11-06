@@ -534,7 +534,13 @@ func (h *Handler) callVertexAI(prompt, contentType string, params map[string]str
 			}
 		}
 	}
-	return nil, fmt.Errorf("vertex: image bytes not found in response")
+	responseBody, err := json.Marshal(result)
+	if err != nil {
+		// Fallback if marshaling fails
+		return nil, fmt.Errorf("vertex: image bytes not found in response (and failed to marshal error response)")
+	}
+
+	return nil, fmt.Errorf("vertex: image bytes not found in response. Full Vertex response: %s", string(responseBody))
 }
 
 // callGrok wires xAI (Grok) provider. Currently only text is supported here.
