@@ -1,0 +1,37 @@
+# Headers for JavaScript modules - CRITICAL for Vite builds
+# Note: charset parameter may cause issues, using without it
+/assets/*.js
+  Content-Type: application/javascript
+
+/*.js
+  Content-Type: application/javascript
+
+/*.mjs
+  Content-Type: application/javascript
+
+# Headers for CSS
+/assets/*.css
+  Content-Type: text/css
+
+/*.css
+  Content-Type: text/css
+
+# Headers for HTML
+/*.html
+  Content-Type: text/html; charset=utf-8
+
+# Headers for SVG
+/*.svg
+  Content-Type: image/svg+xml
+
+# Headers for WASM
+/*.wasm
+  Content-Type: application/wasm
+
+# Security headers (applied to all)
+/*
+  X-Frame-Options: DENY
+  X-XSS-Protection: 1; mode=block
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+
