@@ -60,6 +60,13 @@ export default function Topbar() {
           <Button 
             variant="ghost" 
             size="sm"
+            onClick={() => navigate('/proof-of-human-work')}
+          >
+            Proof of Human Work
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="sm"
             onClick={() => navigate('/faq')}
           >
             FAQ

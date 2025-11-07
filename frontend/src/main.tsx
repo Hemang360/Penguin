@@ -8,6 +8,7 @@ import Session from './pages/Session'
 import NotFound from './pages/NotFound'
 import Features from './pages/Features'
 import FAQ from './pages/FAQ'
+import ProofOfHumanWork from './pages/ProofOfHumanWork'
 import { AuthProvider } from './contexts/AuthContext'
 import LandingPage from './pages/LandingPage'
 
@@ -18,6 +19,7 @@ const router = createBrowserRouter([
   { path: '/session/:id', element: <Session /> },
   { path: '/features', element: <Features /> },
   { path: '/faq', element: <FAQ /> },
+  { path: '/proof-of-human-work', element: <ProofOfHumanWork /> },
   { path: '*', element: <NotFound /> }
 ])
 
