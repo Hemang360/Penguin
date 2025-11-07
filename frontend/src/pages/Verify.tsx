@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react'
-import { verifyByFile, verifyByKey } from '../lib/api'
+import { verifyByFile, verifyByKey, verifyByArtworkId } from '../lib/api'
 import Topbar from '../components/Topbar'
 import { Card, CardContent } from '../components/ui/card'
 import { Button } from '../components/ui/button'
@@ -97,7 +97,24 @@ export default function Verify() {
       if (verificationMethod === 'file' && selectedFile) {
         res = await verifyByFile(selectedFile)
       } else if (verificationMethod === 'id' && artId.trim()) {
-        res = await verifyByKey(artId.trim())
+        const id = artId.trim()
+        // Try artwork ID endpoint first (primary method for artwork verification)
+        try {
+          res = await verifyByArtworkId(id)
+        } catch (err: any) {
+          // If artwork ID fails (404), try legacy verify endpoint as fallback
+          // This handles cases where the ID might be a different type of key
+          if (err.response?.status === 404) {
+            try {
+              res = await verifyByKey(id)
+            } catch (err2: any) {
+              // If both fail, throw the original error
+              throw err
+            }
+          } else {
+            throw err
+          }
+        }
       } else {
         setResult({ error: 'Please select a file or enter an Art ID/Wallet Address' })
         setIsUploading(false)
@@ -105,8 +122,10 @@ export default function Verify() {
       }
       setResult(res)
     } catch (error: any) {
+      console.error('Verification error:', error)
+      const errorMessage = error.response?.data?.error || error.response?.data?.message || error.message || 'Verification failed'
       setResult({ 
-        error: error.response?.data?.error || error.message || 'Verification failed',
+        error: errorMessage,
         isAuthentic: false
       })
     } finally {

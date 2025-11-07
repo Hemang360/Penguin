@@ -14,7 +14,86 @@ interface Artwork {
   blockchainTxHash: string;
   createdAt: string;
   certificateUrl: string;
+  imageUrl?: string; // For image previews
 }
+
+// ArtworkCard component to handle image error state
+const ArtworkCard = ({ artwork, onViewCertificate, onDownloadCertificate }: { 
+  artwork: Artwork; 
+  onViewCertificate: (id: string) => void;
+  onDownloadCertificate: (id: string) => void;
+}) => {
+  const [imageError, setImageError] = useState(false);
+
+  return (
+    <div className="rounded-xl p-4 border border-neutral-800 hover:border-cyan-600 transition-all bg-neutral-900">
+      <div className="aspect-square bg-gradient-to-br from-fuchsia-500/10 to-cyan-500/10 rounded-lg mb-4 flex items-center justify-center overflow-hidden relative">
+        {artwork.contentType === 'image' && artwork.imageUrl && !imageError ? (
+          <img 
+            src={artwork.imageUrl} 
+            alt={artwork.title}
+            className="w-full h-full object-cover rounded-lg"
+            onError={() => setImageError(true)}
+          />
+        ) : artwork.contentType === 'image' ? (
+          <Image size={64} className="text-white/30" />
+        ) : artwork.contentType === 'text' ? (
+          <FileText size={64} className="text-white/30" />
+        ) : (
+          <Music size={64} className="text-white/30" />
+        )}
+      </div>
+      <h3 className="font-semibold mb-2 truncate">{artwork.title}</h3>
+      <p className="text-sm text-gray-500 mb-3 truncate">{artwork.prompt}</p>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-gray-600">IPFS:</span>
+          <span className="text-cyan-400 truncate ml-2">{artwork.ipfsHash.substring(0, 12)}...</span>
+        </div>
+        <div className="flex items-center justify-between text-xs">
+          <span className="text-gray-600">Blockchain:</span>
+          <span className="text-green-400 truncate ml-2">{artwork.blockchainTxHash.substring(0, 12)}...</span>
+        </div>
+      </div>
+      <div className="mt-4 flex space-x-2">
+        <button 
+          onClick={() => onViewCertificate(artwork.id)}
+          className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white text-sm py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
+        >
+          <Eye size={16} />
+          View Certificate
+        </button>
+        <button 
+          onClick={() => onDownloadCertificate(artwork.id)}
+          className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
+        >
+          <Download size={16} />
+          Download
+        </button>
+      </div>
+      <div className="mt-2 flex items-center justify-between text-xs">
+        <span className={`px-2 py-1 rounded ${
+          artwork.blockchainTxHash 
+            ? 'bg-green-500/20 text-green-400' 
+            : 'bg-yellow-500/20 text-yellow-400'
+        }`}>
+          {artwork.blockchainTxHash ? 'Certified' : 'Pending Mint'}
+        </span>
+        {artwork.ipfsHash && (
+          <a
+            href={`https://ipfs.io/ipfs/${artwork.ipfsHash}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+          >
+            IPFS
+            <ExternalLink size={12} />
+          </a>
+        )}
+      </div>
+    </div>
+  );
+};
 
 export default function Dashboard() {
   const { isAuthenticated, account } = useAuth();
@@ -47,7 +126,18 @@ export default function Dashboard() {
     // Fetch user's artworks from backend
     const storedArtworks = localStorage.getItem('artworks');
     if (storedArtworks) {
-      setArtworks(JSON.parse(storedArtworks));
+      const parsed: Artwork[] = JSON.parse(storedArtworks);
+      // Add imageUrl for existing artworks if missing
+      const artworksWithImages = parsed.map(artwork => {
+        if (artwork.contentType === 'image' && !artwork.imageUrl && artwork.ipfsHash) {
+          return {
+            ...artwork,
+            imageUrl: `https://ipfs.io/ipfs/${artwork.ipfsHash}`
+          };
+        }
+        return artwork;
+      });
+      setArtworks(artworksWithImages);
     }
   };
 
@@ -74,6 +164,17 @@ export default function Dashboard() {
         }
       });
 
+      // Get image URL from response or construct from IPFS hash
+      let imageUrl: string | undefined;
+      if (contentType === 'image') {
+        // Check if response includes image URL
+        if (response.artwork.image_url) {
+          imageUrl = response.artwork.image_url;
+        } else if (response.artwork.ipfs_hash) {
+          imageUrl = `https://ipfs.io/ipfs/${response.artwork.ipfs_hash}`;
+        }
+      }
+
       const newArtwork: Artwork = {
         id: response.artwork.id,
         title: prompt.substring(0, 50),
@@ -82,7 +183,8 @@ export default function Dashboard() {
         ipfsHash: response.artwork.ipfs_hash,
         blockchainTxHash: response.artwork.blockchain_tx_hash,
         createdAt: new Date().toISOString(),
-        certificateUrl: response.certificate.verification_url
+        certificateUrl: response.certificate.verification_url,
+        imageUrl: imageUrl
       };
 
       const updatedArtworks = [...artworks, newArtwork];
@@ -107,6 +209,13 @@ export default function Dashboard() {
     setLoading(true);
     try {
       const fileData = await file.arrayBuffer();
+      
+      // Create image preview URL for images
+      let imageUrl: string | undefined;
+      if (file.type.startsWith('image/')) {
+        imageUrl = URL.createObjectURL(file);
+      }
+      
       const response = await importArt({
         user_id: userWallet,
         source_url: '',
@@ -125,7 +234,8 @@ export default function Dashboard() {
         ipfsHash: response.artwork.ipfs_hash,
         blockchainTxHash: response.artwork.blockchain_tx_hash,
         createdAt: new Date().toISOString(),
-        certificateUrl: response.certificate.verification_url
+        certificateUrl: response.certificate.verification_url,
+        imageUrl: imageUrl || (response.artwork.ipfs_hash ? `https://ipfs.io/ipfs/${response.artwork.ipfs_hash}` : undefined)
       };
 
       const updatedArtworks = [...artworks, newArtwork];
@@ -361,65 +471,12 @@ export default function Dashboard() {
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {artworks.map((artwork) => (
-                    <div key={artwork.id} className="rounded-xl p-4 border border-neutral-800 hover:border-cyan-600 transition-all bg-neutral-900">
-                      <div className="aspect-square bg-gradient-to-br from-fuchsia-500/10 to-cyan-500/10 rounded-lg mb-4 flex items-center justify-center">
-                        {artwork.contentType === 'image' ? (
-                          <Image size={64} className="text-white/30" />
-                        ) : artwork.contentType === 'text' ? (
-                          <FileText size={64} className="text-white/30" />
-                        ) : (
-                          <Music size={64} className="text-white/30" />
-                        )}
-                      </div>
-                      <h3 className="font-semibold mb-2 truncate">{artwork.title}</h3>
-                      <p className="text-sm text-gray-500 mb-3 truncate">{artwork.prompt}</p>
-                      <div className="space-y-2">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-gray-600">IPFS:</span>
-                          <span className="text-cyan-400 truncate ml-2">{artwork.ipfsHash.substring(0, 12)}...</span>
-                        </div>
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="text-gray-600">Blockchain:</span>
-                          <span className="text-green-400 truncate ml-2">{artwork.blockchainTxHash.substring(0, 12)}...</span>
-                        </div>
-                      </div>
-                      <div className="mt-4 flex space-x-2">
-                        <button 
-                          onClick={() => viewCertificate(artwork.id)}
-                          className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white text-sm py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
-                        >
-                          <Eye size={16} />
-                          View Certificate
-                        </button>
-                        <button 
-                          onClick={() => downloadCertificate(artwork.id)}
-                          className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
-                        >
-                          <Download size={16} />
-                          Download
-                        </button>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between text-xs">
-                        <span className={`px-2 py-1 rounded ${
-                          artwork.blockchainTxHash 
-                            ? 'bg-green-500/20 text-green-400' 
-                            : 'bg-yellow-500/20 text-yellow-400'
-                        }`}>
-                          {artwork.blockchainTxHash ? 'Certified' : 'Pending Mint'}
-                        </span>
-                        {artwork.ipfsHash && (
-                          <a
-                            href={`https://ipfs.io/ipfs/${artwork.ipfsHash}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
-                          >
-                            IPFS
-                            <ExternalLink size={12} />
-                          </a>
-                        )}
-                      </div>
-                    </div>
+                    <ArtworkCard
+                      key={artwork.id}
+                      artwork={artwork}
+                      onViewCertificate={viewCertificate}
+                      onDownloadCertificate={downloadCertificate}
+                    />
                   ))}
                 </div>
               )}
