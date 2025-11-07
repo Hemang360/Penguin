@@ -21,6 +21,10 @@ interface SetCapturingMessage {
     value: boolean;
 }
 
+interface ResumeCapturingMessage {
+    action: "RESUME_CAPTURING";
+}
+
 interface ContentScriptResponse {
     success: boolean;
     error?: string;
@@ -171,7 +175,7 @@ function downloadText(filename: string, text: string) {
 }
 
 chrome.runtime.onMessage.addListener(
-	(request: ToggleMessage | PathFoundMessage | { action: "interactionCaptured"; interaction: InteractionPayload }, sender, sendResponse) => {
+	(request: ToggleMessage | PathFoundMessage | { action: "interactionCaptured"; interaction: InteractionPayload } | ResumeCapturingMessage, sender, sendResponse) => {
     
     if (request.action === "toggleCapture") {
         const { shouldStart } = request as ToggleMessage;
@@ -194,6 +198,15 @@ chrome.runtime.onMessage.addListener(
         });
         
         return true; 
+    }
+
+    if (request.action === "RESUME_CAPTURING") {
+        chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs.length > 0 && tabs[0].id) {
+                chrome.tabs.sendMessage(tabs[0].id, { action: "RESUME_CAPTURING" });
+            }
+        });
+        return false; // No response needed
     }
 
     if (request.action === "domPathFound") {
