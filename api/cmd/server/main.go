@@ -2,12 +2,16 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -15,6 +19,7 @@ import (
 	"github.com/labstack/echo/v4/middleware"
 
 	"yourproject/internal/auth"
+	"yourproject/internal/crawler"
 	"yourproject/internal/handlers"
 	"yourproject/internal/ipfsdb"
 )
@@ -202,6 +207,33 @@ func main() {
 	bcClient := ipfsdb.NewBlockchainClient(db)
 	api := handlers.NewHandler(storage, ipfsClient, bcClient)
 
+	// Initialize crawler for reverse image search and similarity detection
+	similarityThreshold := 0.70 // Default 70% similarity threshold
+	if thresholdStr := os.Getenv("CRAWLER_SIMILARITY_THRESHOLD"); thresholdStr != "" {
+		if threshold, err := strconv.ParseFloat(thresholdStr, 64); err == nil {
+			similarityThreshold = threshold
+		}
+	}
+
+	checkInterval := 1 * time.Hour // Default: check every hour
+	if intervalStr := os.Getenv("CRAWLER_CHECK_INTERVAL"); intervalStr != "" {
+		if interval, err := time.ParseDuration(intervalStr); err == nil {
+			checkInterval = interval
+		}
+	}
+
+	crawlerInstance := crawler.NewCrawler(db, similarityThreshold, checkInterval)
+	log.Printf("🕷️  Crawler initialized (threshold: %.2f, interval: %v)", similarityThreshold, checkInterval)
+
+	// Start crawler in background
+	crawlerCtx, crawlerCancel := context.WithCancel(context.Background())
+
+	go func() {
+		if err := crawlerInstance.Start(crawlerCtx); err != nil && err != context.Canceled {
+			log.Printf("⚠️  Crawler error: %v", err)
+		}
+	}()
+
 	// Public endpoints (no authentication required)
 	e.GET("/health", func(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
@@ -235,13 +267,53 @@ func main() {
 	e.POST("/upload", api.UploadManifest)
 	e.POST("/manifests", api.UploadManifest) // Alias for convenience
 
+	// Crawler notification endpoints - protected
+	protected.GET("/notifications", api.GetNotifications)
+	protected.GET("/notifications/artwork/:artworkId", api.GetNotificationsByArtwork)
+	protected.PUT("/notifications/:id/read", api.MarkNotificationAsRead)
+	protected.PUT("/notifications/:id/verify", api.MarkNotificationAsVerified)
+	protected.PUT("/notifications/:id/dismiss", api.DismissNotification)
+	protected.GET("/crawler/stats", api.GetCrawlerStats)
+	protected.POST("/crawler/scan/:artworkId", api.TriggerManualScan)
+
 	addr := ":8080"
 	log.Printf("🌐 API listening on %s", addr)
 	log.Println("📝 POST /upload - Upload manifest to Pinata and store CID on Ethereum")
 	log.Println("🤖 POST /model/predict - Run model inference (proxies to TorchServe)")
+	log.Println("🕷️  Crawler endpoints:")
+	log.Println("   GET  /notifications - Get all infringement notifications")
+	log.Println("   GET  /notifications/artwork/:artworkId - Get notifications for artwork")
+	log.Println("   PUT  /notifications/:id/read - Mark notification as read")
+	log.Println("   PUT  /notifications/:id/verify - Mark notification as verified")
+	log.Println("   PUT  /notifications/:id/dismiss - Dismiss notification")
+	log.Println("   GET  /crawler/stats - Get crawler statistics")
+	log.Println("   POST /crawler/scan/:artworkId - Trigger manual scan")
 	log.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
-	if err := e.Start(addr); err != nil {
+	// Graceful shutdown
+	go func() {
+		if err := e.Start(addr); err != nil && err != http.ErrServerClosed {
+			log.Fatal(err)
+		}
+	}()
+
+	// Wait for interrupt signal to gracefully shutdown the server
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
+	<-quit
+
+	log.Println("🛑 Shutting down server...")
+
+	// Stop crawler
+	crawlerCancel()
+	crawlerInstance.Stop()
+
+	// Shutdown Echo server
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
+	if err := e.Shutdown(shutdownCtx); err != nil {
 		log.Fatal(err)
 	}
+
+	log.Println("✅ Server stopped")
 }

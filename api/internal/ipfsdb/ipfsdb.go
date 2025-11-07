@@ -14,11 +14,17 @@ import (
 
 // Mock interface for local development (simulates IPFS persistence)
 type IPFSDB struct {
-	store map[string]interface{}
+	store          map[string]interface{}
+	crawlerResults map[string][]*models.CrawlerResult // artworkID -> results
+	userArtworks   map[string][]string                // userID -> artworkIDs
 }
 
 func New() *IPFSDB {
-	return &IPFSDB{store: make(map[string]interface{})}
+	return &IPFSDB{
+		store:          make(map[string]interface{}),
+		crawlerResults: make(map[string][]*models.CrawlerResult),
+		userArtworks:   make(map[string][]string),
+	}
 }
 
 func (db *IPFSDB) Save(key string, value interface{}) error {
@@ -42,12 +48,7 @@ func (db *IPFSDB) ListKeys() []string {
 
 // FindUserByAuthenticatorID retrieves a user by their Microsoft Authenticator ID
 func (db *IPFSDB) FindUserByAuthenticatorID(authID string) (*models.User, bool) {
-	// In a real database (like Mongo), you'd run a query:
-	// db.Collection("users").FindOne(ctx, bson.M{"authenticator_id": authID})
-	
-	// For the mock IPFSDB, we must iterate:
 	for _, val := range db.store {
-		// Only check items that are models.User
 		if user, ok := val.(*models.User); ok {
 			if user.AuthenticatorID == authID {
 				return user, true
@@ -55,6 +56,103 @@ func (db *IPFSDB) FindUserByAuthenticatorID(authID string) (*models.User, bool) 
 		}
 	}
 	return nil, false
+}
+
+// GetAllArtworks returns all artworks in the database
+func (db *IPFSDB) GetAllArtworks(ctx context.Context) ([]*models.Artwork, error) {
+	artworks := []*models.Artwork{}
+	for _, val := range db.store {
+		if artwork, ok := val.(*models.Artwork); ok {
+			artworks = append(artworks, artwork)
+		}
+	}
+	return artworks, nil
+}
+
+// GetArtworkByID retrieves a specific artwork by ID
+func (db *IPFSDB) GetArtworkByID(ctx context.Context, id string) (*models.Artwork, error) {
+	val, ok := db.Get(id)
+	if !ok {
+		return nil, fmt.Errorf("artwork not found")
+	}
+
+	if artwork, ok := val.(*models.Artwork); ok {
+		return artwork, nil
+	}
+
+	return nil, fmt.Errorf("invalid artwork data")
+}
+
+// StoreCrawlerResult stores a crawler result in the database
+func (db *IPFSDB) StoreCrawlerResult(ctx context.Context, result *models.CrawlerResult) error {
+	// Store in main store
+	db.Save(result.ID, result)
+
+	// Store in crawler results map for quick lookup
+	if db.crawlerResults[result.OriginalArtworkID] == nil {
+		db.crawlerResults[result.OriginalArtworkID] = []*models.CrawlerResult{}
+	}
+	db.crawlerResults[result.OriginalArtworkID] = append(db.crawlerResults[result.OriginalArtworkID], result)
+
+	return nil
+}
+
+// GetCrawlerResultsByArtworkID retrieves all crawler results for a specific artwork
+func (db *IPFSDB) GetCrawlerResultsByArtworkID(ctx context.Context, artworkID string) ([]*models.CrawlerResult, error) {
+	results := db.crawlerResults[artworkID]
+	if results == nil {
+		return []*models.CrawlerResult{}, nil
+	}
+	return results, nil
+}
+
+// GetCrawlerResultsByUserID retrieves all crawler results for artworks owned by a user
+func (db *IPFSDB) GetCrawlerResultsByUserID(ctx context.Context, userID string) ([]*models.CrawlerResult, error) {
+	allResults := []*models.CrawlerResult{}
+
+	// Get all artworks for this user
+	for _, val := range db.store {
+		if artwork, ok := val.(*models.Artwork); ok {
+			if artwork.ArtistID == userID {
+				// Get all crawler results for this artwork
+				results := db.crawlerResults[artwork.ID]
+				if results != nil {
+					allResults = append(allResults, results...)
+				}
+			}
+		}
+	}
+
+	return allResults, nil
+}
+
+// UpdateCrawlerResultStatus updates the status of a crawler result
+func (db *IPFSDB) UpdateCrawlerResultStatus(ctx context.Context, resultID string, status string) error {
+	val, ok := db.Get(resultID)
+	if !ok {
+		return fmt.Errorf("crawler result not found")
+	}
+
+	if result, ok := val.(*models.CrawlerResult); ok {
+		result.Status = status
+		db.Save(resultID, result)
+		return nil
+	}
+
+	return fmt.Errorf("invalid crawler result data")
+}
+
+// StoreArtwork stores an artwork and tracks user ownership
+func (db *IPFSDB) StoreArtwork(artwork *models.Artwork) error {
+	db.Save(artwork.ID, artwork)
+
+	// Track user's artworks
+	if db.userArtworks[artwork.ArtistID] == nil {
+		db.userArtworks[artwork.ArtistID] = []string{}
+	}
+	db.userArtworks[artwork.ArtistID] = append(db.userArtworks[artwork.ArtistID], artwork.ID)
+
+	return nil
 }
 
 // StorageService provides storage operations for artwork
@@ -66,6 +164,11 @@ type StorageService struct {
 // NewStorageService creates a new storage service
 func NewStorageService(db *IPFSDB) *StorageService {
 	return &StorageService{db: db, pinata: pinata.NewFromEnv()}
+}
+
+// GetDB returns the underlying IPFSDB instance
+func (s *StorageService) GetDB() *IPFSDB {
+	return s.db
 }
 
 // StoreArtwork stores artwork on IPFS and blockchain
@@ -102,10 +205,6 @@ func (s *StorageService) StoreArtwork(ctx context.Context, data []byte, metadata
 		"metadata": metadata,
 		"cid":      cid,
 	})
-
-	// Optionally "store" on chain via stubbed client: env controls
-	_ = os.Getenv("POLYGON_RPC_URL")
-	_ = os.Getenv("POLYGON_CONTRACT_ADDRESS")
 
 	return cid, txHash, nil
 }

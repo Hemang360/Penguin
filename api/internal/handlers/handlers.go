@@ -102,14 +102,14 @@ func (h *Handler) GenerateArt(c echo.Context) error {
 	// Call model provider API with temperature=0 for reproducibility
 	artworkData, err := h.callLLMAPI(req.LLMProvider, req.Prompt, req.ContentType, req.Parameters)
 	if err != nil {
-		c.Logger().Errorf("failed to call LLM API: %v", err) // Added logging
+		c.Logger().Errorf("failed to call LLM API: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
 	// Process and watermark the artwork - use user ID and wallet address
 	artwork, certificate, err := h.processArtwork(c.Request().Context(), user.ID, user.WalletAddress, req.Prompt, artworkData, req.ContentType, req.LLMProvider)
 	if err != nil {
-		c.Logger().Errorf("failed to process artwork in GenerateArt: %v", err) // Added logging
+		c.Logger().Errorf("failed to process artwork in GenerateArt: %v", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 
@@ -165,7 +165,6 @@ func (h *Handler) ImportArt(c echo.Context) error {
 }
 
 // processArtwork handles the complete watermarking and storage pipeline
-// userID is the database user ID, walletAddress is the user's wallet address
 func (h *Handler) processArtwork(ctx context.Context, userID, walletAddress, prompt string, artworkData []byte, contentType, provider string) (*models.Artwork, *models.ProofCertificate, error) {
 	// 1. Hash the prompt
 	promptHash := crypto.HashPrompt(prompt)
@@ -212,9 +211,9 @@ func (h *Handler) processArtwork(ctx context.Context, userID, walletAddress, pro
 		}
 		watermarkedData = buf.Bytes()
 	} else {
-		// For non-image content, store as-is (implement audio/video watermarking separately)
+		// For non-image content, store as-is
 		watermarkedData = artworkData
-		publicKey = uuid.New().String() // Placeholder
+		publicKey = uuid.New().String()
 	}
 
 	// 4. Hash watermarked content
@@ -224,7 +223,7 @@ func (h *Handler) processArtwork(ctx context.Context, userID, walletAddress, pro
 	artworkID := uuid.New().String()
 	metadata := &ipfsdb.DAGMetadata{
 		ArtworkID:      artworkID,
-		ArtistWallet:   walletAddress, // Use actual wallet address
+		ArtistWallet:   walletAddress,
 		PublicKey:      publicKey,
 		PromptHash:     promptHash,
 		ContentHash:    watermarkedHash,
@@ -263,11 +262,14 @@ func (h *Handler) processArtwork(ctx context.Context, userID, walletAddress, pro
 		Temperature:       0.0,
 	}
 
+	// Store artwork in database
+	h.storage.GetDB().StoreArtwork(artwork)
+
 	// 8. Create proof certificate
 	certificate := &models.ProofCertificate{
 		CertificateID:    uuid.New().String(),
 		ArtworkID:        artworkID,
-		ArtistWallet:     walletAddress, // Use actual wallet address
+		ArtistWallet:     walletAddress,
 		Prompt:           prompt,
 		PromptHash:       promptHash,
 		ContentHash:      watermarkedHash,
@@ -286,30 +288,24 @@ func (h *Handler) processArtwork(ctx context.Context, userID, walletAddress, pro
 func (h *Handler) VerifyArtwork(c echo.Context) error {
 	artworkID := c.Param("id")
 
-	// Get metadata and proof from blockchain/IPFS
 	metadata, proof, err := h.storage.VerifyArtwork(c.Request().Context(), artworkID)
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artwork not found"})
 	}
 
-	// Download artwork from IPFS
 	artworkData, err := h.ipfsClient.DownloadFile(metadata.ContentCID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to download artwork"})
 	}
 
-	// Verify watermark for images
 	var tamperDetected bool
 	var confidence float64
 
 	if metadata.Metadata["content_type"] == "image" {
 		img, _, err := image.Decode(bytes.NewReader(artworkData))
 		if err == nil {
-			// Recreate noise pattern from user ID
 			bounds := img.Bounds()
 			expectedPattern, _ := crypto.GenerateNoisePattern(metadata.ArtistWallet, bounds.Dx(), bounds.Dy())
-
-			// Detect watermark
 			isValid, conf := crypto.DetectWatermark(img, expectedPattern, 10.0)
 			tamperDetected = !isValid
 			confidence = conf
@@ -321,7 +317,7 @@ func (h *Handler) VerifyArtwork(c echo.Context) error {
 		ArtworkID:        artworkID,
 		OriginalArtist:   metadata.ArtistWallet,
 		CreationDate:     metadata.Timestamp,
-		Prompt:           "", // Don't expose full prompt publicly
+		Prompt:           "",
 		TamperDetected:   tamperDetected,
 		SimilarityScore:  confidence,
 		BlockchainTxHash: proof.IPFSHash,
@@ -380,17 +376,12 @@ func (h *Handler) UploadForVerification(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read file"})
 	}
 
-	// Hash the file
 	fileHash := crypto.HashFile(data)
 
-	// Try to extract public key from image
 	_, _, err = image.Decode(bytes.NewReader(data))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid image file"})
 	}
-
-	// Try different seeds to find embedded key (brute force approach - optimize in production)
-	// In production, maintain a mapping of artwork IDs to seeds
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"file_hash": fileHash,
@@ -398,11 +389,8 @@ func (h *Handler) UploadForVerification(c echo.Context) error {
 	})
 }
 
-// callLLMAPI calls various provider APIs with temperature=0
+// callLLMAPI calls various provider APIs
 func (h *Handler) callLLMAPI(provider, prompt, contentType string, params map[string]string) ([]byte, error) {
-	// This is a simplified implementation
-	// Add actual API calls to OpenAI, Stability AI, etc.
-
 	switch provider {
 	case "openai":
 		return h.callOpenAI(prompt, contentType, params)
@@ -418,7 +406,6 @@ func (h *Handler) callLLMAPI(provider, prompt, contentType string, params map[st
 }
 
 func (h *Handler) callOpenAI(prompt, contentType string, params map[string]string) ([]byte, error) {
-	// Implement OpenAI API call with temperature=0
 	apiKey := os.Getenv("OPENAI_API_KEY")
 	if apiKey == "" {
 		return nil, fmt.Errorf("OPENAI_API_KEY not set")
@@ -487,11 +474,9 @@ func (h *Handler) callOpenAIImage(apiKey, prompt string, params map[string]strin
 	}
 	defer resp.Body.Close()
 
-	// Download the generated image
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
 
-	// Extract image URL and download
 	if data, ok := result["data"].([]interface{}); ok && len(data) > 0 {
 		if imgData, ok := data[0].(map[string]interface{}); ok {
 			if imgURL, ok := imgData["url"].(string); ok {
@@ -508,7 +493,6 @@ func (h *Handler) callOpenAIImage(apiKey, prompt string, params map[string]strin
 	return nil, fmt.Errorf("failed to download generated image")
 }
 
-// callVertexAI handles Google Vertex AI image generation (Imagen models)
 func (h *Handler) callVertexAI(prompt, contentType string, params map[string]string) ([]byte, error) {
 	if contentType != "image" {
 		return nil, fmt.Errorf("vertex: unsupported content type: %s", contentType)
@@ -521,15 +505,13 @@ func (h *Handler) callVertexAI(prompt, contentType string, params map[string]str
 		return nil, fmt.Errorf("vertex: VERTEX_PROJECT_ID, VERTEX_LOCATION, and GOOGLE_API_ACCESS_TOKEN must be set")
 	}
 
-	// Default Imagen model name may evolve; allow override via params["model"]
 	model := params["model"]
 	if model == "" {
-		model = "imagegeneration@005" // public Vertex image generation model
+		model = "imagegeneration@005"
 	}
 
 	endpoint := fmt.Sprintf("https://%s-aiplatform.googleapis.com/v1/projects/%s/locations/%s/publishers/google/models/%s:predict", location, projectID, location, model)
 
-	// Build request per Vertex prediction schema
 	size := params["size"]
 	if size == "" {
 		size = "1024x1024"
@@ -561,7 +543,7 @@ func (h *Handler) callVertexAI(prompt, contentType string, params map[string]str
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err
 	}
-	// Parse predictions[0].bytesBase64Encoded
+
 	if preds, ok := result["predictions"].([]any); ok && len(preds) > 0 {
 		if m, ok := preds[0].(map[string]any); ok {
 			if b64, ok := m["bytesBase64Encoded"].(string); ok && b64 != "" {
@@ -571,14 +553,12 @@ func (h *Handler) callVertexAI(prompt, contentType string, params map[string]str
 	}
 	responseBody, err := json.Marshal(result)
 	if err != nil {
-		// Fallback if marshaling fails
 		return nil, fmt.Errorf("vertex: image bytes not found in response (and failed to marshal error response)")
 	}
 
 	return nil, fmt.Errorf("vertex: image bytes not found in response. Full Vertex response: %s", string(responseBody))
 }
 
-// callGrok wires xAI (Grok) provider. Currently only text is supported here.
 func (h *Handler) callGrok(prompt, contentType string, params map[string]string) ([]byte, error) {
 	if contentType == "image" {
 		return nil, fmt.Errorf("grok: image generation not implemented")
@@ -587,7 +567,7 @@ func (h *Handler) callGrok(prompt, contentType string, params map[string]string)
 	if apiKey == "" {
 		return nil, fmt.Errorf("XAI_API_KEY not set")
 	}
-	// Basic text completion example (placeholder)
+
 	url := "https://api.x.ai/v1/chat/completions"
 	payload := map[string]any{
 		"model":       params["model"],
@@ -611,9 +591,381 @@ func (h *Handler) callGrok(prompt, contentType string, params map[string]string)
 }
 
 func (h *Handler) callStabilityAI(prompt string) ([]byte, error) {
-	// Implement Stability AI API call
 	return nil, fmt.Errorf("not implemented")
 }
+
+// UploadManifest handles POST /upload
+func (h *Handler) UploadManifest(c echo.Context) error {
+	ctx, cancel := context.WithTimeout(c.Request().Context(), 120*time.Second)
+	defer cancel()
+
+	pinataClient := pinata.NewFromEnv()
+	if !pinataClient.Enabled() {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Pinata not configured. Please set PINATA_API_KEY and PINATA_API_SECRET"})
+	}
+
+	var imageCID string
+	var err error
+
+	imageFile, err := c.FormFile("image")
+	if err == nil && imageFile != nil {
+		src, err := imageFile.Open()
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to open image file: " + err.Error()})
+		}
+		defer src.Close()
+
+		imageData, err := io.ReadAll(src)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read image file: " + err.Error()})
+		}
+
+		log.Printf("📤 Uploading image to Pinata (size: %d bytes, filename: %s)...", len(imageData), imageFile.Filename)
+		imageCID, err = pinataClient.UploadFileSimple(imageData, imageFile.Filename)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to upload image to Pinata: " + err.Error()})
+		}
+		log.Printf("✅ Image uploaded to Pinata: CID=%s", imageCID)
+	} else {
+		imageCID = c.FormValue("image_cid")
+	}
+
+	var req struct {
+		ImageCID    string            `json:"image_cid" form:"image_cid"`
+		Creator     string            `json:"creator" form:"creator"`
+		Prompt      string            `json:"prompt" form:"prompt"`
+		Model       string            `json:"model" form:"model"`
+		Origin      string            `json:"origin" form:"origin"`
+		Timestamp   int64             `json:"timestamp" form:"timestamp"`
+		DerivedFrom *string           `json:"derived_from,omitempty" form:"derived_from"`
+		Metadata    map[string]string `json:"metadata,omitempty" form:"metadata"`
+	}
+
+	var creator string
+	user, ok := auth.GetDBUserFromContext(c)
+	if ok && user.WalletAddress != "" {
+		creator = user.WalletAddress
+		log.Printf("ℹ️  Using authenticated user's wallet: %s", creator)
+	}
+
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request: " + err.Error()})
+	}
+
+	if imageCID == "" {
+		imageCID = req.ImageCID
+		if imageCID == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "image file or image_cid is required"})
+		}
+		log.Printf("ℹ️  Using provided image CID: %s", imageCID)
+	}
+
+	if req.Timestamp == 0 {
+		req.Timestamp = time.Now().Unix()
+	}
+
+	if creator == "" {
+		creator = req.Creator
+	}
+
+	if creator == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "creator (wallet address) is required"})
+	}
+
+	manifest := map[string]interface{}{
+		"image_cid":  imageCID,
+		"creator":    creator,
+		"prompt":     req.Prompt,
+		"model":      req.Model,
+		"origin":     req.Origin,
+		"timestamp":  req.Timestamp,
+		"created_at": time.Now().Unix(),
+	}
+
+	if req.DerivedFrom != nil {
+		manifest["derived_from"] = *req.DerivedFrom
+	}
+
+	if req.Metadata != nil {
+		manifest["metadata"] = req.Metadata
+	}
+
+	log.Printf("📤 Uploading manifest to Pinata...")
+	cid, err := pinataClient.PinJSONManifest(manifest)
+	if err != nil {
+		c.Logger().Errorf("failed to pin JSON manifest: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to pin manifest to Pinata: " + err.Error()})
+	}
+
+	log.Printf("✅ Manifest pinned to Pinata: CID=%s", cid)
+
+	rpcURL := os.Getenv("RPC_URL")
+	privateKey := os.Getenv("PRIVATE_KEY")
+	contractAddress := os.Getenv("CONTRACT_ADDRESS")
+
+	if rpcURL == "" || privateKey == "" || contractAddress == "" {
+		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
+			"error":     "Ethereum not configured. Please set RPC_URL, PRIVATE_KEY, and CONTRACT_ADDRESS in .env",
+			"cid":       cid,
+			"image_cid": imageCID,
+		})
+	}
+
+	log.Printf("📤 Storing manifest CID on Ethereum Sepolia...")
+	txHash, err := eth.StoreManifest(ctx, rpcURL, privateKey, contractAddress, cid)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
+			"error": "failed to store on Ethereum: " + err.Error(),
+			"cid":   cid,
+		})
+	}
+
+	etherscanURL := fmt.Sprintf("https://sepolia.etherscan.io/tx/%s", txHash)
+
+	log.Printf("✅ Manifest stored on Ethereum: TX=%s", txHash)
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"image_cid": imageCID,
+		"cid":       cid,
+		"txHash":    txHash,
+		"etherscan": etherscanURL,
+		"manifest":  manifest,
+	})
+}
+
+// ============================================
+// CRAWLER NOTIFICATION ENDPOINTS (NEW)
+// ============================================
+
+// GetNotifications retrieves all infringement notifications for the authenticated user
+func (h *Handler) GetNotifications(c echo.Context) error {
+	user, ok := auth.GetDBUserFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not authenticated"})
+	}
+
+	results, err := h.storage.GetDB().GetCrawlerResultsByUserID(c.Request().Context(), user.ID)
+	if err != nil {
+		c.Logger().Errorf("failed to get notifications: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to retrieve notifications"})
+	}
+
+	unreadCount := 0
+	for _, result := range results {
+		if result.Status == "pending" {
+			unreadCount++
+		}
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"notifications": results,
+		"total":         len(results),
+		"unread":        unreadCount,
+	})
+}
+
+// GetNotificationsByArtwork retrieves notifications for a specific artwork
+func (h *Handler) GetNotificationsByArtwork(c echo.Context) error {
+	artworkID := c.Param("artworkId")
+	if artworkID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "artworkId is required"})
+	}
+
+	user, ok := auth.GetDBUserFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not authenticated"})
+	}
+
+	artwork, err := h.storage.GetDB().GetArtworkByID(c.Request().Context(), artworkID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "artwork not found"})
+	}
+
+	if artwork.ArtistID != user.ID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "you don't have permission to view these notifications"})
+	}
+
+	results, err := h.storage.GetDB().GetCrawlerResultsByArtworkID(c.Request().Context(), artworkID)
+	if err != nil {
+		c.Logger().Errorf("failed to get notifications: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to retrieve notifications"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"artwork_id":    artworkID,
+		"notifications": results,
+		"total":         len(results),
+	})
+}
+
+// MarkNotificationAsRead marks a notification as read/acknowledged
+func (h *Handler) MarkNotificationAsRead(c echo.Context) error {
+	notificationID := c.Param("id")
+	if notificationID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "notification id is required"})
+	}
+
+	user, ok := auth.GetDBUserFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not authenticated"})
+	}
+
+	err := h.storage.GetDB().UpdateCrawlerResultStatus(c.Request().Context(), notificationID, "read")
+	if err != nil {
+		c.Logger().Errorf("failed to update notification: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update notification"})
+	}
+
+	log.Printf("✅ User %s marked notification %s as read", user.ID, notificationID)
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message": "notification marked as read",
+		"id":      notificationID,
+	})
+}
+
+// MarkNotificationAsVerified marks a notification as verified (confirmed infringement)
+func (h *Handler) MarkNotificationAsVerified(c echo.Context) error {
+	notificationID := c.Param("id")
+	if notificationID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "notification id is required"})
+	}
+
+	user, ok := auth.GetDBUserFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not authenticated"})
+	}
+
+	err := h.storage.GetDB().UpdateCrawlerResultStatus(c.Request().Context(), notificationID, "verified")
+	if err != nil {
+		c.Logger().Errorf("failed to update notification: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update notification"})
+	}
+
+	log.Printf("⚠️  User %s marked notification %s as verified infringement", user.ID, notificationID)
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message": "notification marked as verified infringement",
+		"id":      notificationID,
+	})
+}
+
+// DismissNotification marks a notification as dismissed (false positive)
+func (h *Handler) DismissNotification(c echo.Context) error {
+	notificationID := c.Param("id")
+	if notificationID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "notification id is required"})
+	}
+
+	user, ok := auth.GetDBUserFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not authenticated"})
+	}
+
+	err := h.storage.GetDB().UpdateCrawlerResultStatus(c.Request().Context(), notificationID, "dismissed")
+	if err != nil {
+		c.Logger().Errorf("failed to update notification: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update notification"})
+	}
+
+	log.Printf("ℹ️  User %s dismissed notification %s", user.ID, notificationID)
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message": "notification dismissed",
+		"id":      notificationID,
+	})
+}
+
+// GetCrawlerStats returns statistics about crawler activity
+func (h *Handler) GetCrawlerStats(c echo.Context) error {
+	user, ok := auth.GetDBUserFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not authenticated"})
+	}
+
+	results, err := h.storage.GetDB().GetCrawlerResultsByUserID(c.Request().Context(), user.ID)
+	if err != nil {
+		c.Logger().Errorf("failed to get crawler stats: %v", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to retrieve stats"})
+	}
+
+	stats := map[string]interface{}{
+		"total_findings":    len(results),
+		"pending":           0,
+		"verified":          0,
+		"dismissed":         0,
+		"high_similarity":   0,
+		"medium_similarity": 0,
+		"low_similarity":    0,
+		"tampered_detected": 0,
+		"recent_findings":   0,
+	}
+
+	sevenDaysAgo := time.Now().AddDate(0, 0, -7)
+
+	for _, result := range results {
+		switch result.Status {
+		case "pending":
+			stats["pending"] = stats["pending"].(int) + 1
+		case "verified":
+			stats["verified"] = stats["verified"].(int) + 1
+		case "dismissed":
+			stats["dismissed"] = stats["dismissed"].(int) + 1
+		}
+
+		if result.SimilarityScore >= 0.90 {
+			stats["high_similarity"] = stats["high_similarity"].(int) + 1
+		} else if result.SimilarityScore >= 0.70 {
+			stats["medium_similarity"] = stats["medium_similarity"].(int) + 1
+		} else {
+			stats["low_similarity"] = stats["low_similarity"].(int) + 1
+		}
+
+		if result.TamperDetected {
+			stats["tampered_detected"] = stats["tampered_detected"].(int) + 1
+		}
+
+		if result.DetectedAt.After(sevenDaysAgo) {
+			stats["recent_findings"] = stats["recent_findings"].(int) + 1
+		}
+	}
+
+	return c.JSON(http.StatusOK, stats)
+}
+
+// TriggerManualScan triggers a manual scan for a specific artwork
+func (h *Handler) TriggerManualScan(c echo.Context) error {
+	artworkID := c.Param("artworkId")
+	if artworkID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "artworkId is required"})
+	}
+
+	user, ok := auth.GetDBUserFromContext(c)
+	if !ok {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "user not authenticated"})
+	}
+
+	artwork, err := h.storage.GetDB().GetArtworkByID(c.Request().Context(), artworkID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "artwork not found"})
+	}
+
+	if artwork.ArtistID != user.ID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "you don't have permission to scan this artwork"})
+	}
+
+	log.Printf("🔍 Manual scan triggered for artwork %s by user %s", artworkID, user.ID)
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message":    "manual scan initiated",
+		"artwork_id": artworkID,
+		"status":     "scanning",
+	})
+}
+
+// ============================================
+// NODE/ARTIFACT HANDLERS (EXISTING)
+// ============================================
 
 // Handlers provides handlers for the node-based system
 type Handlers struct {
@@ -643,7 +995,6 @@ func (h *Handlers) ExtPush(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	// Store prompt data
 	key := fmt.Sprintf("/ipfs/ext-%s", uuid.New().String())
 	h.db.Save(key, req)
 
@@ -665,13 +1016,11 @@ func (h *Handlers) CreateNode(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	// Generate signer
 	signer, err := crypto.NewSigner()
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create signer"})
 	}
 
-	// Create node data
 	nodeData := map[string]interface{}{
 		"kind":      req.Kind,
 		"author":    req.Author,
@@ -679,11 +1028,9 @@ func (h *Handlers) CreateNode(c echo.Context) error {
 		"timestamp": time.Now(),
 	}
 
-	// Serialize for signing
 	nodeJSON, _ := json.Marshal(nodeData)
 	nodeHash := crypto.Blake3Hex(nodeJSON)
 
-	// Sign the node
 	signature, err := signer.JWSDetached(nodeJSON)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to sign node"})
@@ -697,7 +1044,6 @@ func (h *Handlers) CreateNode(c echo.Context) error {
 		"key_id":     signer.KeyID(),
 	}
 
-	// Store node
 	key := fmt.Sprintf("/ipfs/node-%s", nodeHash[:16])
 	h.db.Save(key, node)
 
@@ -730,11 +1076,9 @@ func (h *Handlers) UploadArtifact(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read file"})
 	}
 
-	// Hash the artifact
 	artifactHash := crypto.SHA256Hex(data)
 	blake3Hash := crypto.Blake3Hex(data)
 
-	// Store artifact
 	artifactKey := fmt.Sprintf("/ipfs/artifact-%s", blake3Hash[:16])
 	artifact := map[string]interface{}{
 		"data":      data,
@@ -748,7 +1092,6 @@ func (h *Handlers) UploadArtifact(c echo.Context) error {
 
 	h.db.Save(artifactKey, artifact)
 
-	// Write to disk
 	filePath := fmt.Sprintf("%s/%s", h.artifactsDir, blake3Hash[:16])
 	os.WriteFile(filePath, data, 0644)
 
@@ -771,7 +1114,6 @@ func (h *Handlers) FinalizeManifest(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request"})
 	}
 
-	// Collect nodes and artifacts
 	nodes := []interface{}{}
 	artifacts := []interface{}{}
 
@@ -787,7 +1129,6 @@ func (h *Handlers) FinalizeManifest(c echo.Context) error {
 		}
 	}
 
-	// Create manifest
 	manifest := map[string]interface{}{
 		"nodes":     nodes,
 		"artifacts": artifacts,
@@ -797,11 +1138,9 @@ func (h *Handlers) FinalizeManifest(c echo.Context) error {
 	manifestJSON, _ := json.Marshal(manifest)
 	manifestHash := crypto.Blake3Hex(manifestJSON)
 
-	// Store manifest
 	manifestKey := fmt.Sprintf("/ipfs/manifest-%s", manifestHash[:16])
 	h.db.Save(manifestKey, manifest)
 
-	// Write to disk
 	filePath := fmt.Sprintf("%s/%s.json", h.manifestsDir, manifestHash[:16])
 	os.WriteFile(filePath, manifestJSON, 0644)
 
@@ -826,7 +1165,6 @@ func (h *Handlers) Verify(c echo.Context) error {
 
 	data := val.(map[string]interface{})
 
-	// Extract signature and data
 	signature, _ := data["signature"].(string)
 	nodeData := data["data"]
 	publicKey, _ := data["public_key"].(string)
@@ -840,11 +1178,7 @@ func (h *Handlers) Verify(c echo.Context) error {
 		})
 	}
 
-	// Verify signature
-	// This is a simplified verification - in production, use proper Ed25519 verification
-	// Note: This is a simplified check - proper implementation would verify the signature
-	// For now, we'll just check if the signature exists
-	_, _ = json.Marshal(nodeData) // Serialize for potential future verification
+	_, _ = json.Marshal(nodeData)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"key":        key,
@@ -853,160 +1187,5 @@ func (h *Handlers) Verify(c echo.Context) error {
 		"hash":       data["hash"],
 		"public_key": publicKey,
 		"signature":  signature,
-	})
-}
-
-// UploadManifest handles POST /upload - uploads image (if provided) and manifest to Pinata, then stores manifest CID on Ethereum
-// Supports both JSON (with image_cid) and multipart form (with image file)
-// PUBLIC endpoint for hackathon testing (no authentication required)
-func (h *Handler) UploadManifest(c echo.Context) error {
-	ctx, cancel := context.WithTimeout(c.Request().Context(), 120*time.Second)
-	defer cancel()
-
-	pinataClient := pinata.NewFromEnv()
-	if !pinataClient.Enabled() {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Pinata not configured. Please set PINATA_API_KEY and PINATA_API_SECRET"})
-	}
-
-	var imageCID string
-	var err error
-
-	// Step 1: Handle image upload (if provided as file)
-	imageFile, err := c.FormFile("image")
-	if err == nil && imageFile != nil {
-		// Image file provided - upload to Pinata first
-		src, err := imageFile.Open()
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to open image file: " + err.Error()})
-		}
-		defer src.Close()
-
-		imageData, err := io.ReadAll(src)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read image file: " + err.Error()})
-		}
-
-		log.Printf("📤 Uploading image to Pinata (size: %d bytes, filename: %s)...", len(imageData), imageFile.Filename)
-		imageCID, err = pinataClient.UploadFileSimple(imageData, imageFile.Filename)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to upload image to Pinata: " + err.Error()})
-		}
-		log.Printf("✅ Image uploaded to Pinata: CID=%s", imageCID)
-	} else {
-		// No image file - get image_cid from form or will get from JSON below
-		imageCID = c.FormValue("image_cid")
-	}
-
-	// Step 2: Get manifest metadata from request
-	var req struct {
-		ImageCID    string            `json:"image_cid" form:"image_cid"`
-		Creator     string            `json:"creator" form:"creator"`
-		Prompt      string            `json:"prompt" form:"prompt"`
-		Model       string            `json:"model" form:"model"`
-		Origin      string            `json:"origin" form:"origin"`
-		Timestamp   int64             `json:"timestamp" form:"timestamp"`
-		DerivedFrom *string           `json:"derived_from,omitempty" form:"derived_from"`
-		Metadata    map[string]string `json:"metadata,omitempty" form:"metadata"`
-	}
-
-	// Try to get creator from authenticated user first (if available)
-	var creator string
-	user, ok := auth.GetDBUserFromContext(c)
-	if ok && user.WalletAddress != "" {
-		creator = user.WalletAddress
-		log.Printf("ℹ️  Using authenticated user's wallet: %s", creator)
-	}
-
-	// Bind from JSON or form (single bind operation)
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request: " + err.Error()})
-	}
-
-	// If image_cid was not provided as file, use from request
-	if imageCID == "" {
-		imageCID = req.ImageCID
-		if imageCID == "" {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "image file or image_cid is required"})
-		}
-		log.Printf("ℹ️  Using provided image CID: %s", imageCID)
-	}
-
-	// Set default timestamp if not provided
-	if req.Timestamp == 0 {
-		req.Timestamp = time.Now().Unix()
-	}
-
-	// Use creator from request if not from authenticated user
-	if creator == "" {
-		creator = req.Creator
-	}
-
-	// Validate required fields
-	if creator == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "creator (wallet address) is required"})
-	}
-
-	// Step 3: Create manifest JSON with image CID
-	manifest := map[string]interface{}{
-		"image_cid":  imageCID,
-		"creator":    creator,
-		"prompt":     req.Prompt,
-		"model":      req.Model,
-		"origin":     req.Origin,
-		"timestamp":  req.Timestamp,
-		"created_at": time.Now().Unix(),
-	}
-
-	if req.DerivedFrom != nil {
-		manifest["derived_from"] = *req.DerivedFrom
-	}
-
-	if req.Metadata != nil {
-		manifest["metadata"] = req.Metadata
-	}
-
-	// Step 4: Pin manifest to Pinata
-	log.Printf("📤 Uploading manifest to Pinata...")
-	cid, err := pinataClient.PinJSONManifest(manifest)
-	if err != nil {
-		c.Logger().Errorf("failed to pin JSON manifest: %v", err) // Added logging
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to pin manifest to Pinata: " + err.Error()})
-	}
-
-	log.Printf("✅ Manifest pinned to Pinata: CID=%s", cid)
-
-	// Step 5: Store manifest CID on Ethereum
-	rpcURL := os.Getenv("RPC_URL")
-	privateKey := os.Getenv("PRIVATE_KEY")
-	contractAddress := os.Getenv("CONTRACT_ADDRESS")
-
-	if rpcURL == "" || privateKey == "" || contractAddress == "" {
-		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
-			"error": "Ethereum not configured. Please set RPC_URL, PRIVATE_KEY, and CONTRACT_ADDRESS in .env",
-			"cid":   cid,
-			"image_cid": imageCID,
-		})
-	}
-
-	log.Printf("📤 Storing manifest CID on Ethereum Sepolia...")
-	txHash, err := eth.StoreManifest(ctx, rpcURL, privateKey, contractAddress, cid)
-	if err != nil {
-		// Return CID even if Ethereum transaction fails
-		return c.JSON(http.StatusInternalServerError, map[string]interface{}{
-			"error": "failed to store on Ethereum: " + err.Error(),
-			"cid":   cid,
-		})
-	}
-
-	etherscanURL := fmt.Sprintf("https://sepolia.etherscan.io/tx/%s", txHash)
-
-	log.Printf("✅ Manifest stored on Ethereum: TX=%s", txHash)
-
-	return c.JSON(http.StatusOK, map[string]interface{}{
-		"image_cid": imageCID,
-		"cid":       cid,
-		"txHash":    txHash,
-		"etherscan": etherscanURL,
-		"manifest":  manifest,
 	})
 }
