@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Image, FileText, Music, CheckCircle, AlertCircle } from 'lucide-react';
+import { Upload, Image, FileText, Music, CheckCircle, AlertCircle, Eye, Download, ExternalLink } from 'lucide-react';
 import { generateArt, importArt, getCertificate } from '../lib/api';
 import Topbar from '../components/Topbar';
 import { useAuth } from '../contexts/AuthContext';
+import CertificateModal from '../components/CertificateModal';
 
 interface Artwork {
   id: string;
@@ -25,6 +26,8 @@ export default function Dashboard() {
   const [imageSize, setImageSize] = useState('1024x1024');
   const [loading, setLoading] = useState(false);
   const [userWallet, setUserWallet] = useState('');
+  const [selectedCertificate, setSelectedCertificate] = useState<any>(null);
+  const [isCertificateOpen, setIsCertificateOpen] = useState(false);
 
   useEffect(() => {
     // Use Microsoft account ID as user identifier
@@ -138,6 +141,17 @@ export default function Dashboard() {
     }
   };
 
+  const viewCertificate = async (artworkId: string) => {
+    try {
+      const certificate = await getCertificate(artworkId);
+      setSelectedCertificate(certificate);
+      setIsCertificateOpen(true);
+    } catch (error) {
+      console.error('Error fetching certificate:', error);
+      alert('Failed to load certificate');
+    }
+  };
+
   const downloadCertificate = async (artworkId: string) => {
     try {
       const certificate = await getCertificate(artworkId);
@@ -149,6 +163,7 @@ export default function Dashboard() {
       a.click();
     } catch (error) {
       console.error('Error downloading certificate:', error);
+      alert('Failed to download certificate');
     }
   };
 
@@ -160,7 +175,7 @@ export default function Dashboard() {
           <h1 className="text-4xl md:text-5xl font-bold mb-3 bg-gradient-to-r from-fuchsia-500 to-cyan-500 bg-clip-text text-transparent">
             PengWin
           </h1>
-          <p className="text-base md:text-lg text-gray-400">Create verifiable AI-generated art with blockchain certification</p>
+          <p className="text-base md:text-lg text-gray-400">Create verifiable AI generated art with blockchain certification</p>
           <div className="mt-4 flex items-center space-x-2">
             {isAuthenticated ? (
               <>
@@ -302,9 +317,10 @@ export default function Dashboard() {
                   <label className="w-full hover:bg-neutral-800/70 border-2 border-dashed border-neutral-700 rounded-lg py-8 flex flex-col items-center justify-center cursor-pointer transition-all">
                     <Upload size={32} className="mb-2 text-gray-500" />
                     <span className="text-sm text-gray-500">Import existing artwork</span>
+                    <span className="text-xs text-gray-600 mt-1">Use Chrome Extension to import from external platforms</span>
                     <input
                       type="file"
-                      accept="image/*,audio/*"
+                      accept="image/*,audio/*,video/*"
                       onChange={(e) => {
                         if (e.target.files?.[0]) {
                           handleImport(e.target.files[0]);
@@ -313,6 +329,21 @@ export default function Dashboard() {
                       className="hidden"
                     />
                   </label>
+
+                  {/* Biometric Authentication Note */}
+                  {isAuthenticated && (
+                    <div className="rounded-lg bg-cyan-500/10 border border-cyan-500/20 p-3 mt-4">
+                      <div className="flex items-start gap-2">
+                        <CheckCircle className="text-cyan-400 mt-0.5" size={16} />
+                        <div>
+                          <p className="text-xs text-gray-300 font-medium">Proof of Human Authentication</p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            Your Microsoft authenticator provides biometric verification. Ed25519 keys are automatically generated for cryptographic signing.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -354,14 +385,39 @@ export default function Dashboard() {
                       </div>
                       <div className="mt-4 flex space-x-2">
                         <button 
-                          onClick={() => downloadCertificate(artwork.id)}
-                          className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white text-sm py-2 px-4 rounded-lg transition-all"
+                          onClick={() => viewCertificate(artwork.id)}
+                          className="flex-1 bg-cyan-600 hover:bg-cyan-700 text-white text-sm py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
                         >
-                          Download Certificate
+                          <Eye size={16} />
+                          View Certificate
                         </button>
-                        <button className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm py-2 px-4 rounded-lg transition-all">
-                          View
+                        <button 
+                          onClick={() => downloadCertificate(artwork.id)}
+                          className="bg-neutral-800 hover:bg-neutral-700 text-white text-sm py-2 px-4 rounded-lg transition-all flex items-center justify-center gap-2"
+                        >
+                          <Download size={16} />
+                          Download
                         </button>
+                      </div>
+                      <div className="mt-2 flex items-center justify-between text-xs">
+                        <span className={`px-2 py-1 rounded ${
+                          artwork.blockchainTxHash 
+                            ? 'bg-green-500/20 text-green-400' 
+                            : 'bg-yellow-500/20 text-yellow-400'
+                        }`}>
+                          {artwork.blockchainTxHash ? 'Certified' : 'Pending Mint'}
+                        </span>
+                        {artwork.ipfsHash && (
+                          <a
+                            href={`https://ipfs.io/ipfs/${artwork.ipfsHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+                          >
+                            IPFS
+                            <ExternalLink size={12} />
+                          </a>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -371,6 +427,11 @@ export default function Dashboard() {
           </div>
         </div>
       </div>
+      <CertificateModal
+        certificate={selectedCertificate}
+        isOpen={isCertificateOpen}
+        onClose={() => setIsCertificateOpen(false)}
+      />
     </div>
   );
 }

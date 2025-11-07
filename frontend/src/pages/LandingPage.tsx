@@ -1,16 +1,14 @@
 import React from 'react'
 import Topbar from '../components/Topbar'
 import { Link } from 'react-router-dom'
-import { ShieldCheck, Image, BadgeCheck, Network } from 'lucide-react'
+import { ShieldCheck, Image, BadgeCheck, Network, Lock, Fingerprint, FileCheck, AlertTriangle, CheckCircle2, ArrowRight, Zap, Database, Link2 } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-black text-gray-100">
-      <Topbar />
-      <main className="relative w-full overflow-hidden">
-        {/* Animated background particles */}
-        <div className="absolute inset-0 pointer-events-none z-0">
+    <div className="min-h-screen bg-black text-gray-100 relative">
+      {/* Animated background particles - covers entire page */}
+      <div className="fixed inset-0 pointer-events-none z-0 overflow-hidden">
           {/* Small glowing particles with varied motion */}
           {[...Array(12)].map((_, i) => {
             const positions = [
@@ -194,38 +192,43 @@ export default function LandingPage() {
               />
             );
           })}
+          
+          {/* Decorative animated blobs */}
+          <motion.div
+            className="pointer-events-none absolute -top-10 -left-10 h-72 w-72 bg-gradient-to-br from-fuchsia-500/30 to-cyan-500/30 blur-3xl rounded-full opacity-60"
+            animate={{ 
+              y: [0, -20, 10, 0],
+              x: [0, 15, -10, 0],
+              scale: [1, 1.1, 0.95, 1],
+            }}
+            transition={{ duration: 15, repeat: Infinity, ease: 'easeInOut' }}
+          />
+          <motion.div
+            className="pointer-events-none absolute top-40 -right-10 h-64 w-64 bg-gradient-to-br from-cyan-500/30 to-fuchsia-500/30 blur-3xl rounded-full opacity-40"
+            animate={{ 
+              scale: [1, 1.15, 0.9, 1],
+              x: [0, -20, 10, 0],
+              y: [0, 15, -10, 0],
+            }}
+            transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
+          />
+          <motion.div
+            className="pointer-events-none absolute bottom-20 left-1/4 h-80 w-80 bg-gradient-to-br from-purple-500/20 to-cyan-500/20 blur-3xl rounded-full opacity-30"
+            animate={{ 
+              scale: [1, 1.2, 0.85, 1],
+              x: [0, 30, -20, 0],
+              y: [0, -25, 20, 0],
+            }}
+            transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
+          />
         </div>
-        {/* Decorative animated blobs */}
-        <motion.div
-          className="pointer-events-none absolute -top-10 -left-10 h-72 w-72 bg-gradient-to-br from-fuchsia-500/30 to-cyan-500/30 blur-3xl rounded-full opacity-60 z-0"
-          animate={{ 
-            y: [0, -20, 10, 0],
-            x: [0, 15, -10, 0],
-            scale: [1, 1.1, 0.95, 1],
-          }}
-          transition={{ duration: 15, repeat: Infinity, ease: 'easeInOut' }}
-        />
-        <motion.div
-          className="pointer-events-none absolute top-40 -right-10 h-64 w-64 bg-gradient-to-br from-cyan-500/30 to-fuchsia-500/30 blur-3xl rounded-full opacity-40 z-0"
-          animate={{ 
-            scale: [1, 1.15, 0.9, 1],
-            x: [0, -20, 10, 0],
-            y: [0, 15, -10, 0],
-          }}
-          transition={{ duration: 12, repeat: Infinity, ease: 'easeInOut' }}
-        />
-        <motion.div
-          className="pointer-events-none absolute bottom-20 left-1/4 h-80 w-80 bg-gradient-to-br from-purple-500/20 to-cyan-500/20 blur-3xl rounded-full opacity-30 z-0"
-          animate={{ 
-            scale: [1, 1.2, 0.85, 1],
-            x: [0, 30, -20, 0],
-            y: [0, -25, 20, 0],
-          }}
-          transition={{ duration: 18, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-        />
-        {/* Hero */}
-        <section className="py-16 md:py-24 relative z-10 px-4" style={{ isolation: 'isolate' }}>
-          <div className="max-w-6xl mx-auto relative" style={{ zIndex: 10 }}>
+      
+      <div className="relative z-10">
+        <Topbar />
+        <main className="relative w-full">
+          {/* Hero */}
+          <section className="py-16 md:py-24 relative px-4">
+            <div className="max-w-6xl mx-auto relative">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-center">
               {/* Left side - Text content */}
               <div className="text-left">
@@ -235,8 +238,11 @@ export default function LandingPage() {
                   transition={{ duration: 0.6, ease: 'easeOut', delay: 0.2 }}
                 >
                   <h1 className="text-4xl md:text-6xl font-bold bg-gradient-to-r from-fuchsia-500 to-cyan-500 bg-clip-text text-transparent">
-                    Certify Your AI-Crafted Creations
+                    PengWin: Verify and Mint Your Artwork
                   </h1>
+                  <p className="mt-2 text-xl md:text-2xl text-gray-300 font-medium">
+                    Verifiable, Immutable, Yours.
+                  </p>
                 </motion.div>
                 <motion.p
                   className="mt-4 md:mt-6 text-base md:text-lg text-gray-400"
@@ -244,25 +250,26 @@ export default function LandingPage() {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, ease: 'easeOut', delay: 0.35 }}
                 >
-                  PengWin lets you generate, import, and verify AI artwork with on-chain proofs and IPFS-backed storage.
+                  PengWin introduces the Proof of Art (PoA) Framework - a blockchain-backed system for immutable AI creation records. Protect your generative art with cryptographic signatures and decentralized storage.
                 </motion.p>
                 <motion.div
-                  className="mt-8 flex items-center gap-3"
+                  className="mt-8 flex items-center gap-3 flex-wrap"
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.6, ease: 'easeOut', delay: 0.5 }}
                 >
                   <Link
                     to="/generate"
-                    className="bg-gradient-to-r from-fuchsia-500 to-cyan-500 hover:from-fuchsia-600 hover:to-cyan-600 text-white font-medium py-3 px-6 rounded-lg transition-transform duration-200 hover:scale-[1.02]"
+                    className="bg-gradient-to-r from-fuchsia-500 to-cyan-500 hover:from-fuchsia-600 hover:to-cyan-600 text-white font-medium py-3 px-6 rounded-lg transition-transform duration-200 hover:scale-[1.02] flex items-center gap-2"
                   >
-                    Launch Studio
+                    Start Creating & Certifying
+                    <ArrowRight size={18} />
                   </Link>
                   <Link
                     to="/verify"
                     className="border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-white font-medium py-3 px-6 rounded-lg transition-transform duration-200 hover:scale-[1.02]"
                   >
-                    Verify Artwork
+                    Verify an Artwork Now
                   </Link>
                 </motion.div>
               </div>
@@ -273,15 +280,12 @@ export default function LandingPage() {
                 animate={{ opacity: 1, scale: 1, y: 0 }}
                 transition={{ duration: 0.8, ease: 'easeOut' }}
                 className="flex justify-center md:justify-end relative"
-                style={{ zIndex: 50 }}
               >
                 <img 
                   src="/pengwin.svg" 
                   alt="Pengwin" 
-                  className="w-80 h-80 md:w-96 md:h-96 lg:w-[28rem] lg:h-[28rem]"
+                  className="w-80 h-80 md:w-96 md:h-96 lg:w-[28rem] lg:h-[28rem] relative"
                   style={{ 
-                    position: 'relative', 
-                    zIndex: 50,
                     filter: 'invert(1) brightness(1.2)',
                   }}
                 />
@@ -290,9 +294,225 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* Feature grid */}
-        <section className="pb-16 md:pb-24 relative z-10 px-4">
-          <div className="max-w-6xl mx-auto">
+          {/* Problem/Solution Section */}
+          <section className="py-16 md:py-24 relative px-4">
+            <div className="max-w-6xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="grid grid-cols-1 md:grid-cols-2 gap-8"
+            >
+              {/* Problem */}
+              <div className="rounded-2xl p-8 border border-red-500/20 bg-red-500/5">
+                <div className="flex items-center gap-3 mb-4">
+                  <AlertTriangle className="text-red-400" size={24} />
+                  <h2 className="text-2xl font-bold text-red-400">The Problem</h2>
+                </div>
+                <p className="text-gray-300 leading-relaxed">
+                  AI generated art faces a critical threat to ownership and attribution. As generative AI becomes mainstream, creators struggle to:
+                </p>
+                <ul className="mt-4 space-y-2 text-gray-400">
+                  <li className="flex items-start gap-2">
+                    <span className="text-red-400 mt-1">•</span>
+                    <span>Prove authentic authorship of their AI creations</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-red-400 mt-1">•</span>
+                    <span>Protect against theft and unauthorized reproduction</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-red-400 mt-1">•</span>
+                    <span>Establish verifiable ownership for legal protection</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-red-400 mt-1">•</span>
+                    <span>Maintain immutable records of creation metadata</span>
+                  </li>
+                </ul>
+              </div>
+
+              {/* Solution */}
+              <div className="rounded-2xl p-8 border border-cyan-500/20 bg-cyan-500/5">
+                <div className="flex items-center gap-3 mb-4">
+                  <CheckCircle2 className="text-cyan-400" size={24} />
+                  <h2 className="text-2xl font-bold text-cyan-400">The Solution</h2>
+                </div>
+                <p className="text-gray-300 leading-relaxed mb-4">
+                  <strong className="text-white">PengWin's Proof of Art Framework</strong> solves this with:
+                </p>
+                <ul className="space-y-2 text-gray-300">
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="text-cyan-400 mt-1" size={18} />
+                    <span><strong>Unique Pixel Watermarking:</strong> Undetectable, tamper-proof noise patterns embedded in every creation</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="text-cyan-400 mt-1" size={18} />
+                    <span><strong>Blockchain Certification:</strong> Ed25519 cryptographic signatures tied to creator identity</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="text-cyan-400 mt-1" size={18} />
+                    <span><strong>Decentralized Storage:</strong> IPFS-backed immutable records with DAG-based fast retrieval</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <CheckCircle2 className="text-cyan-400 mt-1" size={18} />
+                    <span><strong>Anti-Theft Crawler:</strong> pHash-based detection of unauthorized copies across the web</span>
+                  </li>
+                </ul>
+              </div>
+            </motion.div>
+            </div>
+          </section>
+
+          {/* How It Works - 3 Step Process */}
+          <section className="py-16 md:py-24 relative px-4">
+            <div className="max-w-6xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="text-center mb-12"
+            >
+              <h2 className="text-3xl md:text-4xl font-bold mb-4 bg-gradient-to-r from-fuchsia-500 to-cyan-500 bg-clip-text text-transparent">
+                How It Works
+              </h2>
+              <p className="text-gray-400 text-lg">Three simple steps to secure your AI creations forever</p>
+            </motion.div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+              {/* Step 1 */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: 0.1 }}
+                className="relative"
+              >
+                <div className="rounded-2xl p-8 border border-neutral-800 bg-neutral-900 h-full">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="h-12 w-12 rounded-full bg-gradient-to-br from-fuchsia-500 to-cyan-500 flex items-center justify-center text-2xl font-bold">
+                      1
+                    </div>
+                    <h3 className="text-xl font-bold">Create & Sign</h3>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-2">
+                      <Image className="text-fuchsia-400 mt-1" size={18} />
+                      <div>
+                        <p className="font-medium text-gray-200">Prompt/Art Input</p>
+                        <p className="text-sm text-gray-500">Generate or import your AI creation with full metadata capture</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <Fingerprint className="text-cyan-400 mt-1" size={18} />
+                      <div>
+                        <p className="font-medium text-gray-200">Unique Pixel Noise</p>
+                        <p className="text-sm text-gray-500">Invisible watermark embedded using Gaussian noise pattern unique to you</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-6 pt-6 border-t border-neutral-800">
+                    <div className="flex items-center gap-2 text-sm text-gray-400">
+                      <Lock size={14} />
+                      <span>Biometric authentication via Microsoft</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="hidden md:block absolute top-1/2 -right-4 transform -translate-y-1/2">
+                  <ArrowRight className="text-neutral-600" size={32} />
+                </div>
+              </motion.div>
+
+              {/* Step 2 */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: 0.2 }}
+                className="relative"
+              >
+                <div className="rounded-2xl p-8 border border-neutral-800 bg-neutral-900 h-full">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="h-12 w-12 rounded-full bg-gradient-to-br from-fuchsia-500 to-cyan-500 flex items-center justify-center text-2xl font-bold">
+                      2
+                    </div>
+                    <h3 className="text-xl font-bold">Verify & Mint</h3>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-2">
+                      <ShieldCheck className="text-green-400 mt-1" size={18} />
+                      <div>
+                        <p className="font-medium text-gray-200">Ed25519/GPG Key</p>
+                        <p className="text-sm text-gray-500">Cryptographic signature generated from your authenticator</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <FileCheck className="text-cyan-400 mt-1" size={18} />
+                      <div>
+                        <p className="font-medium text-gray-200">Proof of Human</p>
+                        <p className="text-sm text-gray-500">Biometric hash captured for human verification</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-6 pt-6 border-t border-neutral-800">
+                    <div className="flex items-center gap-2 text-sm text-gray-400">
+                      <Zap size={14} />
+                      <span>Automatic key generation on first login</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="hidden md:block absolute top-1/2 -right-4 transform -translate-y-1/2">
+                  <ArrowRight className="text-neutral-600" size={32} />
+                </div>
+              </motion.div>
+
+              {/* Step 3 */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: 0.3 }}
+              >
+                <div className="rounded-2xl p-8 border border-neutral-800 bg-neutral-900 h-full">
+                  <div className="flex items-center gap-4 mb-6">
+                    <div className="h-12 w-12 rounded-full bg-gradient-to-br from-fuchsia-500 to-cyan-500 flex items-center justify-center text-2xl font-bold">
+                      3
+                    </div>
+                    <h3 className="text-xl font-bold">Secure & Trade</h3>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-2">
+                      <Database className="text-purple-400 mt-1" size={18} />
+                      <div>
+                        <p className="font-medium text-gray-200">DAG Storage</p>
+                        <p className="text-sm text-gray-500">Directed Acyclic Graph for fast metadata retrieval by public key</p>
+                      </div>
+                    </div>
+                    <div className="flex items-start gap-2">
+                      <Link2 className="text-cyan-400 mt-1" size={18} />
+                      <div>
+                        <p className="font-medium text-gray-200">IPFS/Blockchain</p>
+                        <p className="text-sm text-gray-500">Immutable on-chain records with IPFS content addressing</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-6 pt-6 border-t border-neutral-800">
+                    <div className="flex items-center gap-2 text-sm text-gray-400">
+                      <BadgeCheck size={14} />
+                      <span>Certificate downloadable immediately</span>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+            </div>
+          </section>
+
+          {/* Feature grid */}
+          <section className="pb-16 md:pb-24 relative px-4">
+            <div className="max-w-6xl mx-auto">
             <motion.div
               className="grid grid-cols-1 md:grid-cols-3 gap-6"
             initial="hidden"
@@ -340,12 +560,110 @@ export default function LandingPage() {
               </p>
             </motion.div>
           </motion.div>
-          </div>
-        </section>
+            </div>
+          </section>
 
-        {/* Showcase/CTA strip */}
-        <section className="pb-20 relative z-10 px-4">
-          <div className="max-w-6xl mx-auto">
+          {/* Technology & Transparency Section */}
+          <section className="py-16 md:py-24 relative px-4">
+            <div className="max-w-6xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="text-center mb-12"
+            >
+              <h2 className="text-3xl md:text-4xl font-bold mb-4 bg-gradient-to-r from-fuchsia-500 to-cyan-500 bg-clip-text text-transparent">
+                Technology & Transparency
+              </h2>
+              <p className="text-gray-400 text-lg">Understanding our innovative Proof of Art mechanics</p>
+            </motion.div>
+
+            <div className="space-y-8">
+              {/* Proof-of-Art Mechanics */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6 }}
+                className="rounded-2xl p-8 border border-neutral-800 bg-neutral-900"
+              >
+                <h3 className="text-2xl font-bold mb-6 flex items-center gap-2">
+                  <Fingerprint className="text-fuchsia-400" size={24} />
+                  Proof of Art Mechanics
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="font-semibold text-lg mb-2 text-cyan-400">Secure Prompt Capture</h4>
+                    <p className="text-gray-400 text-sm leading-relaxed">
+                      Every prompt and creation metadata is hashed using SHA-256. Combined with Proof of Human biometric signatures, we ensure authentic authorship verification tied to your Microsoft authenticator.
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-lg mb-2 text-cyan-400">Unique Watermark Technology</h4>
+                    <p className="text-gray-400 text-sm leading-relaxed">
+                      Our innovative Gaussian noise pattern is generated uniquely per user and artwork. This invisible watermark is undetectable to the human eye and tamper-proof, allowing us to verify authenticity even in compressed or modified copies.
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-lg mb-2 text-cyan-400">Cryptographic Bond</h4>
+                    <p className="text-gray-400 text-sm leading-relaxed">
+                      Each artwork is signed with Ed25519 cryptographic keys automatically generated from your authenticator. This creates an immutable link between your identity and your creation, preventing forgery.
+                    </p>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-lg mb-2 text-cyan-400">Anti-Theft Protection</h4>
+                    <p className="text-gray-400 text-sm leading-relaxed">
+                      Our pHash (Perceptual Hashing) crawler constantly scans the web for unauthorized copies. By detecting the unique pixel arrangement, we can identify tampered or stolen artworks across platforms.
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* Decentralized Architecture */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: 0.2 }}
+                className="rounded-2xl p-8 border border-neutral-800 bg-neutral-900"
+              >
+                <h3 className="text-2xl font-bold mb-6 flex items-center gap-2">
+                  <Network className="text-cyan-400" size={24} />
+                  Decentralized Architecture
+                </h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="font-semibold text-lg mb-2 text-fuchsia-400">Blockchain Layer</h4>
+                    <p className="text-gray-400 text-sm leading-relaxed mb-3">
+                      Built on Ethereum for security, smart contract capabilities, and ecosystem compatibility. Every certificate transaction is immutably recorded on-chain, providing transparent verification.
+                    </p>
+                    <ul className="space-y-1 text-sm text-gray-500">
+                      <li>• Smart contract-based certificate registry</li>
+                      <li>• Gas-optimized transaction batching</li>
+                      <li>• Cross-chain compatibility ready</li>
+                    </ul>
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-lg mb-2 text-fuchsia-400">Storage Layer</h4>
+                    <p className="text-gray-400 text-sm leading-relaxed mb-3">
+                      Dual-layer storage architecture combines speed with permanence. DAG (Directed Acyclic Graph) enables fast metadata retrieval using public keys, while IPFS/Filecoin ensures content permanence and decentralization.
+                    </p>
+                    <ul className="space-y-1 text-sm text-gray-500">
+                      <li>• DAG for instant metadata lookup</li>
+                      <li>• IPFS for content addressing</li>
+                      <li>• Redundant pinning for availability</li>
+                    </ul>
+                  </div>
+                </div>
+              </motion.div>
+            </div>
+            </div>
+          </section>
+
+          {/* Showcase/CTA strip */}
+          <section className="pb-20 relative px-4">
+            <div className="max-w-6xl mx-auto">
             <motion.div
               className="rounded-2xl p-6 border border-neutral-800 bg-gradient-to-r from-fuchsia-500/10 to-cyan-500/10"
             initial={{ opacity: 0, y: 12 }}
@@ -369,13 +687,18 @@ export default function LandingPage() {
               </Link>
             </div>
           </motion.div>
-          </div>
-        </section>
-      </main>
+            </div>
+          </section>
+        </main>
 
-      <footer className="py-8 text-center text-xs text-gray-600">
-        © {new Date().getFullYear()} PengWin
-      </footer>
+        <footer className="py-8 border-t border-neutral-800/50 relative">
+          <div className="max-w-6xl mx-auto px-4">
+            <div className="text-center text-xs text-gray-600">
+              © {new Date().getFullYear()} PengWin. All rights reserved.
+            </div>
+          </div>
+        </footer>
+      </div>
     </div>
   )
 }

@@ -41,7 +41,14 @@ export default function Topbar() {
             size="sm"
             onClick={() => navigate('/')}
           >
-            Dashboard
+            Home
+          </Button>
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={() => navigate('/features')}
+          >
+            Features
           </Button>
           <Button 
             variant="ghost" 
@@ -50,6 +57,22 @@ export default function Topbar() {
           >
             Verify
           </Button>
+          <Button 
+            variant="ghost" 
+            size="sm"
+            onClick={() => navigate('/faq')}
+          >
+            FAQ
+          </Button>
+          {isAuthenticated && (
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => navigate('/generate')}
+            >
+              Dashboard
+            </Button>
+          )}
           {isAuthenticated ? (
             <div className="flex items-center space-x-3">
               <span className="text-sm text-gray-400">
