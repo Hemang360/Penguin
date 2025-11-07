@@ -25,6 +25,8 @@ interface ExtensionState {
     statusMessage: string;
     dynamicDetail: string;
     latestInteractionText: string; 
+    isPaused: boolean;
+    sessionInteractions: any[];
 }
 
 const API_BASE = 'http://localhost:8787';
@@ -155,6 +157,17 @@ const style = `
     flex: 1 1 auto;
   }
 
+  .secondary-button-group {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+  .secondary-button-group button {
+    flex: 1;
+  }
+
   .copy-button {
     background-color: var(--info-color) !important;
     color: white;
@@ -167,10 +180,24 @@ const style = `
   .send-button {
     background-color: #FF9800 !important;
     color: white;
-    width: 100%;
+    /* width: 100%; */
     margin-top: 10px;
     background-image: linear-gradient(to bottom right, #FFB74D, #FF9800);
     border-radius: 10px;
+  }
+
+  .switch-button {
+    background-color: #03A9F4 !important; /* A nice blue */
+    color: white;
+    margin-top: 10px;
+    background-image: linear-gradient(to bottom right, #4FC3F7, #03A9F4);
+    border-radius: 10px;
+  }
+
+  .pause-resume-button {
+    background-color: #FFC107 !important; /* Amber color */
+    color: #333;
+    background-image: linear-gradient(to bottom right, #FFD54F, #FFC107);
   }
 `;
 
@@ -184,7 +211,9 @@ const App: React.FC = () => {
         isCapturing: false,
         statusMessage: "Loading...",
         dynamicDetail: "Waiting for extension state.",
-        latestInteractionText: "No interaction captured."
+        latestInteractionText: "No interaction captured.",
+        isPaused: false,
+        sessionInteractions: [],
     });
 
     const orderKeys = (obj: any) => {
@@ -209,13 +238,22 @@ const App: React.FC = () => {
             return;
         }
 
-        chrome.storage.local.get(['isCapturing', 'latestInteraction'], (result: StorageData) => {
+        chrome.storage.local.get(['isCapturing', 'latestInteraction', 'isPaused'], (result: StorageData & { isPaused?: boolean }) => {
             const initialCapturing = result.isCapturing || false;
+            const initialPaused = result.isPaused || false;
             const latestText = result.latestInteraction ? pretty(result.latestInteraction) : "No interaction captured.";
+            
+            let dynamicDetail = getStatusDetails(initialCapturing).dynamicDetail;
+            if (initialPaused) {
+                dynamicDetail = "Session is paused. Click Resume to continue monitoring.";
+            }
+
             setState(s => ({ 
                 ...s,
                 isCapturing: initialCapturing,
-                ...getStatusDetails(initialCapturing),
+                isPaused: initialPaused,
+                statusMessage: getStatusDetails(initialCapturing).statusMessage,
+                dynamicDetail: dynamicDetail,
                 latestInteractionText: latestText
             }));
         });
@@ -223,26 +261,45 @@ const App: React.FC = () => {
         const storageListener = (changes: { [key: string]: chrome.storage.StorageChange }, namespace: string) => {
             if (namespace !== 'local') return;
 
-            setState(s => {
-                let newState = { ...s };
+            // This listener will now react to all storage changes and update the state accordingly.
+            chrome.storage.local.get(['isCapturing', 'latestInteraction', 'isPaused', 'sessionInteractions'], (result: StorageData & { isPaused?: boolean, sessionInteractions?: any[] }) => {
+                setState(s => {
+                    const newCapturing = result.isCapturing ?? s.isCapturing;
+                    const newPaused = result.isPaused ?? s.isPaused;
+                    const newInteractions = result.sessionInteractions ?? s.sessionInteractions;
 
-                if (changes.isCapturing) {
-                    const newCapturingState = changes.isCapturing.newValue as boolean;
-                    newState.isCapturing = newCapturingState;
-                    const details = getStatusDetails(newCapturingState);
-                    newState.statusMessage = details.statusMessage;
-                    newState.dynamicDetail = details.dynamicDetail;
-                }
-
-                if (changes.latestInteraction) {
-                    const li = changes.latestInteraction.newValue;
-                    newState.latestInteractionText = pretty(li);
-                    if (newState.isCapturing) {
-                        newState.dynamicDetail = `New interaction from: ${li?.url || ''}`.trim();
+                    let newLatestText = s.latestInteractionText;
+                    if (result.latestInteraction) {
+                        const latestInteractionStr = pretty(result.latestInteraction);
+                        // Only update if it's different, to avoid loops
+                        if (latestInteractionStr !== s.latestInteractionText) {
+                            newLatestText = latestInteractionStr;
+                        }
                     }
-                }
-                
-                return newState;
+                    
+                    // If we are paused, the text should reflect that state.
+                    if (newPaused && s.isPaused !== newPaused) {
+                        newLatestText = "Ready for next model. Click 'Resume' to continue.";
+                    }
+
+                    const statusDetails = getStatusDetails(newCapturing);
+                    let dynamicDetail = statusDetails.dynamicDetail;
+                    if (newPaused) {
+                        dynamicDetail = "Session is paused. Resume to continue monitoring.";
+                    } else if (changes.latestInteraction) {
+                        dynamicDetail = `New interaction from: ${result.latestInteraction?.url || ''}`.trim();
+                    }
+
+                    return {
+                        ...s,
+                        isCapturing: newCapturing,
+                        isPaused: newPaused,
+                        sessionInteractions: newInteractions,
+                        latestInteractionText: newLatestText,
+                        statusMessage: statusDetails.statusMessage,
+                        dynamicDetail: dynamicDetail,
+                    };
+                });
             });
         };
 
@@ -285,20 +342,18 @@ const App: React.FC = () => {
 
     const sendToServer = () => {
         try {
-            const li = JSON.parse(state.latestInteractionText);
-            const outputStr = typeof li?.output === 'string' ? li.output : JSON.stringify(li?.output ?? []);
-            const metadata: Record<string,string> = {
-                url: String(li?.url ?? ''),
-                'modal-version': String(li?.['modal-version'] ?? ''),
-                input: String(li?.input ?? ''),
-                output: outputStr
-            };
+            const interactions = state.sessionInteractions.length > 0 ? state.sessionInteractions : [JSON.parse(state.latestInteractionText)];
+            if (interactions.length === 0 || (interactions.length === 1 && !interactions[0])) {
+                setState(s => ({ ...s, dynamicDetail: 'No interactions to send.' }));
+                return;
+            }
+
             const payload = {
-                prompt: li?.input || '',
-                metadata,
-                timestamp: li?.timestamp || new Date().toISOString()
+                session: interactions,
+                timestamp: new Date().toISOString()
             };
-            setState(s => ({ ...s, dynamicDetail: 'Sending to /ext/push...' }));
+
+            setState(s => ({ ...s, dynamicDetail: 'Sending session to /ext/push...' }));
             fetch(`${API_BASE}/ext/push`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -306,12 +361,53 @@ const App: React.FC = () => {
             }).then(async (res) => {
                 const txt = await res.text();
                 if (!res.ok) throw new Error(txt || `HTTP ${res.status}`);
-                setState(s => ({ ...s, dynamicDetail: 'Sent to /ext/push ✔︎' }));
+                setState(s => ({ ...s, dynamicDetail: 'Session sent to /ext/push ✔︎', sessionInteractions: [], latestInteractionText: "No interaction captured." }));
             }).catch(err => {
                 setState(s => ({ ...s, dynamicDetail: `Send failed: ${err.message}` }));
             });
         } catch (e: any) {
-            setState(s => ({ ...s, dynamicDetail: 'Invalid JSON; cannot send.' }));
+            setState(s => ({ ...s, dynamicDetail: 'Invalid JSON in interactions; cannot send.' }));
+        }
+    };
+
+    const handlePauseResume = () => {
+        const willBePaused = !state.isPaused;
+        chrome.storage.local.set({ isPaused: willBePaused });
+
+        if (!willBePaused) {
+            // If resuming, clear the "Ready for next model" message and prepare for new content.
+            setState(s => ({ ...s, latestInteractionText: "Resuming... waiting for interaction." }));
+            chrome.runtime.sendMessage({ action: "RESUME_CAPTURING" });
+        }
+    };
+
+    const handleSwitchModel = () => {
+        try {
+            const currentInteraction = JSON.parse(state.latestInteractionText);
+            if (currentInteraction && state.latestInteractionText !== "No interaction captured.") {
+                const newSessionInteractions = [...state.sessionInteractions, currentInteraction];
+                const willBePaused = true;
+                
+                // Update storage first
+                chrome.storage.local.set({ 
+                    isPaused: willBePaused, 
+                    sessionInteractions: newSessionInteractions,
+                    // Clear latest interaction from storage to avoid stale data
+                    latestInteraction: null 
+                });
+
+                setState(s => ({
+                    ...s,
+                    sessionInteractions: newSessionInteractions,
+                    latestInteractionText: "Ready for next model. Click 'Resume' to continue.",
+                    isPaused: willBePaused, // Automatically pause
+                    dynamicDetail: `Model output saved. Resume when you're ready on the new page.`
+                }));
+            } else {
+                setState(s => ({ ...s, dynamicDetail: "No valid interaction to save before switching."}));
+            }
+        } catch (e) {
+            setState(s => ({ ...s, dynamicDetail: "Cannot switch: current interaction is not valid JSON."}));
         }
     };
 
@@ -334,6 +430,13 @@ const App: React.FC = () => {
                 >
                     Stop Monitoring
                 </button>
+                <button
+                    onClick={handlePauseResume}
+                    disabled={!state.isCapturing}
+                    className="pause-resume-button"
+                >
+                    {state.isPaused ? 'Resume' : 'Pause'}
+                </button>
             </div>
             
             <div className="status-area">
@@ -342,17 +445,29 @@ const App: React.FC = () => {
             </div>
 
             <div className="json-display-container">
-                <p style={{marginTop: '15px'}}>Latest Interaction JSON:</p>
+                <p style={{marginTop: '15px'}}>Session Interactions:</p>
                 <code className="json-display">
-                    {state.latestInteractionText}
+                    {state.sessionInteractions.map((interaction, index) => (
+                        `// --- Interaction ${index + 1} ---\n${pretty(interaction)}\n\n`
+                    )).join('')}
+                    {`// --- Current Interaction ---\n${state.latestInteractionText}`}
                 </code>
-                <button
-                    onClick={sendToServer}
-                    disabled={state.latestInteractionText === "No interaction captured."}
-                    className="send-button"
-                >
-                    Send JSON to Server
-                </button>
+                <div className="secondary-button-group">
+                    <button
+                        onClick={sendToServer}
+                        disabled={state.latestInteractionText === "No interaction captured." && state.sessionInteractions.length === 0}
+                        className="send-button"
+                    >
+                        Send Session
+                    </button>
+                    <button
+                        onClick={handleSwitchModel}
+                        disabled={!state.isCapturing || state.isPaused || state.latestInteractionText === "No interaction captured."}
+                        className="switch-button"
+                    >
+                        Switch Model
+                    </button>
+                </div>
             </div>
         </>
     );

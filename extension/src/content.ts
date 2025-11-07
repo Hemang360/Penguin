@@ -440,4 +440,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         sendResponse({ success: true, isCapturing: message.value }); 
         return true;
     }
+    if (message.action === 'RESUME_CAPTURING') {
+        console.log("[Content Script] Resume message received. Restarting scraping.");
+        startScraping();
+        sendResponse({ success: true });
+        return true;
+    }
 });
