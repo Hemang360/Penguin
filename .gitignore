@@ -33,3 +33,5 @@ api/storage/manifests/
 .env.*
 **/.env.*
 
+model_store/
+logs/

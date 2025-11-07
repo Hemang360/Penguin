@@ -12,6 +12,7 @@ End-to-end scaffold for the cDNA framework: backend (Go + Echo), frontend (React
 - Pinata account (for IPFS storage) - [Sign up](https://pinata.cloud)
 - Infura account (for Ethereum Sepolia RPC) - [Sign up](https://infura.io)
 - Sepolia testnet ETH - [Get from faucet](https://sepoliafaucet.com/)
+- Air (for hot-reload development) - Install with: `go install github.com/air-verse/air@latest`
 
 ## Backend
 
@@ -76,14 +77,45 @@ PINATA_API_KEY=your_pinata_api_key
 PINATA_API_SECRET=your_pinata_secret
 ```
 
-#### 4. Run the Backend Server
+#### 4. Install Air (Hot-Reload Development)
 
+For automatic hot-reload during development:
+
+```bash
+# Install Air
+go install github.com/air-verse/air@latest
+
+# Add Go bin to PATH (if not already)
+export PATH=$PATH:$(go env GOPATH)/bin
+
+# Verify installation
+air -v
+```
+
+**Note**: The PATH export has been added to your `~/.bashrc`. You may need to restart your terminal or run `source ~/.bashrc` for it to take effect.
+
+#### 5. Run the Backend Server
+
+**Option 1: Using Air (Recommended for Development)**
+```bash
+cd api
+air
+```
+
+**Option 2: Using Go directly**
 ```bash
 cd api
 go run ./cmd/server
 ```
 
-The server will start on `http://localhost:8080` and display configuration status.
+The server will:
+- Start on `http://localhost:8787`
+- Automatically start TorchServe model server on `http://127.0.0.1:8080`
+- Display configuration status
+
+**Model Endpoints:**
+- Model Prediction (via Go API): `POST http://localhost:8787/model/predict`
+- Direct TorchServe: `POST http://127.0.0.1:8080/predictions/poar_detector`
 
 **⚠️ Security Note**: Never commit your `.env` file with real private keys or API secrets!
 
@@ -127,13 +159,26 @@ The server will start on `http://localhost:8080` and display configuration statu
 - POST `/verify/upload` – upload file for verification
 - GET `/verify/:id` – verify artwork by ID
 
+**Model Inference:**
+- POST `/model/predict` – Run model inference (proxies to TorchServe)
+  - Content-Type: `image/jpeg`, `image/png`, or `image/*`
+  - Body: Raw image bytes
+  - Response:
+    ```json
+    {
+      "authenticity_score": 0.8542,
+      "threshold": 0.6,
+      "status": "AUTHENTIC"
+    }
+    ```
+
 **Health:**
 - GET `/health` – health check
 
 ### Example: Upload Manifest
 
 ```bash
-curl -X POST http://localhost:8080/upload \
+curl -X POST http://localhost:8787/upload \
   -H "Content-Type: application/json" \
   -d '{
     "image_cid": "QmYourImageCID",

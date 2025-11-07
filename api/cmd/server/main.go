@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"io"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v4"
@@ -14,6 +19,107 @@ import (
 	"yourproject/internal/ipfsdb"
 )
 
+// startModelServer starts TorchServe in the background
+func startModelServer() {
+	// Get the project root directory (api directory is the working dir when running from Air)
+	// Go up one level from api/ to project root
+	wd, err := os.Getwd()
+	if err != nil {
+		log.Printf("⚠️  Could not get working directory: %v", err)
+		return
+	}
+
+	// If we're in api/cmd/server, go up 3 levels. If in api/, go up 1 level
+	projectRoot := wd
+	if filepath.Base(wd) == "server" {
+		projectRoot = filepath.Join(wd, "..", "..", "..")
+	} else if filepath.Base(wd) == "api" {
+		projectRoot = filepath.Join(wd, "..")
+	}
+
+	scriptPath := filepath.Join(projectRoot, "scripts", "start_model_server.sh")
+
+	log.Println("🤖 Starting TorchServe model server...")
+
+	cmd := exec.Command("bash", scriptPath)
+	cmd.Dir = projectRoot
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	// Start in background
+	if err := cmd.Start(); err != nil {
+		log.Printf("⚠️  Failed to start TorchServe: %v", err)
+		log.Println("   You may need to start it manually: bash scripts/start_model_server.sh")
+		return
+	}
+
+	// Wait for TorchServe to be ready
+	log.Println("⏳ Waiting for TorchServe to be ready...")
+	torchServeURL := "http://127.0.0.1:8080/ping"
+	maxRetries := 30
+
+	for i := 0; i < maxRetries; i++ {
+		resp, err := http.Get(torchServeURL)
+		if err == nil && resp.StatusCode == 200 {
+			log.Println("✅ TorchServe is ready at http://127.0.0.1:8080")
+			return
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	log.Println("⚠️  TorchServe did not respond in time, but continuing anyway...")
+	log.Println("   Model endpoint may not be available yet")
+}
+
+// proxyToTorchServe proxies requests to TorchServe model server
+func proxyToTorchServe(c echo.Context) error {
+	modelName := c.Param("model")
+	if modelName == "" {
+		modelName = "poar_detector" // default model
+	}
+
+	torchServeURL := "http://127.0.0.1:8080/predictions/" + modelName
+
+	// Read request body
+	body, err := io.ReadAll(c.Request().Body)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "failed to read request body"})
+	}
+
+	// Create request to TorchServe
+	req, err := http.NewRequest("POST", torchServeURL, bytes.NewReader(body))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create request"})
+	}
+
+	// Copy headers
+	for key, values := range c.Request().Header {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
+
+	// Make request to TorchServe
+	client := &http.Client{Timeout: 30 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{
+			"error":   "TorchServe model server is not available",
+			"details": err.Error(),
+		})
+	}
+	defer resp.Body.Close()
+
+	// Read response
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read response"})
+	}
+
+	// Return response with same status code
+	return c.Blob(resp.StatusCode, resp.Header.Get("Content-Type"), respBody)
+}
+
 func main() {
 	// Load .env file automatically (if present)
 	if err := godotenv.Load(); err != nil {
@@ -21,6 +127,9 @@ func main() {
 	} else {
 		log.Println(".env file loaded successfully")
 	}
+
+	// Start TorchServe model server
+	startModelServer()
 
 	// Debug check: confirm env variables are loaded
 	log.Printf("🔍 Vertex Project: %s | Location: %s | Token length: %d\n",
@@ -98,6 +207,10 @@ func main() {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	})
 
+	// Model inference endpoints (proxy to TorchServe)
+	e.POST("/model/predict", proxyToTorchServe)
+	e.POST("/model/predict/:model", proxyToTorchServe)
+
 	// Protected endpoints (require Microsoft authentication)
 	protected := e.Group("")
 	protected.Use(auth.JWTAuthMiddleware(db))
@@ -125,6 +238,7 @@ func main() {
 	addr := ":8080"
 	log.Printf("🌐 API listening on %s", addr)
 	log.Println("📝 POST /upload - Upload manifest to Pinata and store CID on Ethereum")
+	log.Println("🤖 POST /model/predict - Run model inference (proxies to TorchServe)")
 	log.Println("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━")
 
 	if err := e.Start(addr); err != nil {
