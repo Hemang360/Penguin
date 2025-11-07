@@ -32,172 +32,167 @@ interface ExtensionState {
 const API_BASE = 'http://localhost:8787';
 
 const style = `
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap');
+
   :root {
-    --purple-dark: #4A148C; /* Deep Purple */
-    --purple-main: #673AB7; /* Main Purple */
-    --purple-light: #B39DDB; /* Light Purple */
-    --text-color-dark: #333333;
-    --text-color-light: #FFFFFF;
-    --success-color: #4CAF50;
-    --danger-color: #F44336;
-    --info-color: #3F51B5;
-    --font-stack: 'Inter', sans-serif;
+    --bg-black: #0a0a0a;
+    --bg-neutral-900: #171717;
+    --border-neutral-800: #262626;
+    --text-gray-100: #f3f4f6;
+    --text-gray-400: #9ca3af;
+    --fuchsia-500: #d946ef;
+    --cyan-500: #06b6d4;
+    --font-sans: 'DM Sans', sans-serif;
   }
   
   body {
-    font-family: var(--font-stack);
-    width: 440px; /* Slightly reduced width */
-    padding: 22px;
-    /* Gradient Background: Dark to Light Purple */
-    background: linear-gradient(135deg, var(--purple-dark) 0%, var(--purple-main) 60%, var(--purple-light) 100%);
-    color: var(--text-color-light); /* White text color for the background */
-    border-radius: 16px; /* More rounded corners */
-    box-shadow: 0 10px 18px rgba(0,0,0,0.25);
-    min-height: 720px; /* Increased height */
+    font-family: var(--font-sans);
+    width: 550px;
+    height: 550px; /* Optimized height */
+    background-color: var(--bg-black);
+    color: var(--text-gray-100);
+    margin: 0;
+    overflow: hidden; /* Prevents the whole extension from scrolling */
+  }
+
+  .app-container {
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
   }
   
   h2 {
-    color: var(--text-color-light); 
-    border-bottom: 2px solid var(--purple-light);
-    padding-bottom: 8px;
+    color: var(--text-gray-100); 
+    border-bottom: 1px solid var(--border-neutral-800);
+    padding-bottom: 10px;
     margin-top: 0;
+    margin-bottom: 12px;
     font-weight: 700;
     text-shadow: 0 1px 2px rgba(0,0,0,0.3);
     text-align: center;
+    font-size: 22px;
+    background: linear-gradient(to right, var(--fuchsia-500), var(--cyan-500));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
   }
   
   button {
-    padding: 12px;
-    border: none;
-    border-radius: 10px; 
+    padding: 10px 12px;
+    border: 1px solid var(--border-neutral-800);
+    border-radius: 8px; 
     cursor: pointer;
-    font-weight: bold;
+    font-weight: 500;
     transition: all 0.2s ease-in-out;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    font-size: 14px;
+    background-color: var(--bg-neutral-900);
+    color: var(--text-gray-100);
   }
   
   button:hover:not(:disabled) {
-    opacity: 0.95;
-    transform: translateY(-2px);
-    box-shadow: 0 6px 8px rgba(0, 0, 0, 0.18);
+    border-color: var(--cyan-500);
+    color: var(--cyan-500);
   }
 
-  #start-button {
-    background-color: var(--success-color);
+  .button-primary {
+    background-image: linear-gradient(to right, var(--fuchsia-500), var(--cyan-500));
     color: white;
-    background-image: linear-gradient(to bottom right, #66BB6A, var(--success-color));
+    border: none;
   }
-  
-  #stop-button {
-    background-color: var(--danger-color);
+
+  .button-primary:hover:not(:disabled) {
+    opacity: 0.9;
     color: white;
-    background-image: linear-gradient(to bottom right, #E57373, var(--danger-color));
+    border: none;
+  }
+
+  #start-button:not(:disabled):hover {
+    color: #4ade80;
+    border-color: #4ade80;
+  }
+
+  #stop-button:not(:disabled):hover {
+    color: #f87171;
+    border-color: #f87171;
+  }
+
+  .pause-resume-button:not(:disabled):hover {
+    color: #fbbf24;
+    border-color: #fbbf24;
   }
   
   button:disabled {
-    background-color: #CCCCCC;
-    color: #666;
+    background: var(--bg-neutral-900);
+    border-color: var(--border-neutral-800);
+    color: #4b5563; /* gray-600 */
     cursor: not-allowed;
-    box-shadow: none;
-    transform: none;
-    background-image: none;
   }
 
   .status-area {
-    padding: 15px;
-    margin-top: 20px;
-    border-radius: 14px;
-    background-color: rgba(255, 255, 255, 0.95);
-    color: var(--text-color-dark);
+    padding: 10px;
+    margin-top: 12px;
+    border-radius: 8px;
+    background-color: var(--bg-neutral-900);
+    border: 1px solid var(--border-neutral-800);
+    color: var(--text-gray-100);
     text-align: left;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    font-size: 14px;
   }
 
   .dynamic-text {
-    font-size: 0.9em;
-    color: var(--purple-dark);
-    margin-top: 5px;
-    font-weight: 500;
+    font-size: 12px;
+    color: var(--text-gray-400);
+    margin-top: 4px;
   }
 
   .json-display-container {
-      margin-top: 15px;
+    margin-top: 2px;
+    flex-grow: 1; /* This is key for the layout */
+    display: flex;
+    flex-direction: column;
+    min-height: 0; /* This is a flexbox trick to make scrolling work */
   }
 
   .json-display-container p {
-      color: white;
-      font-weight: 600;
+      color: var(--text-gray-400);
+      font-weight: 500;
+      margin-bottom: 8px;
+      font-size: 14px;
   }
 
   .json-display {
-    margin-top: 5px;
     padding: 12px;
-    background-color: rgba(255, 255, 255, 0.95);
-    border-radius: 10px;
+    background-color: var(--bg-neutral-900);
+    border: 1px solid var(--border-neutral-800);
+    border-radius: 8px;
     font-family: monospace;
-    font-size: 10px;
+    font-size: 11px;
     word-break: break-word;
-    display: block;
-    min-height: 220px; /* Increased display height */
-    max-height: 520px; /* More room */
-    overflow: auto;
-    color: var(--text-color-dark);
-    box-shadow: inset 0 1px 3px rgba(0,0,0,0.05);
-    white-space: pre-wrap; /* Preserve new lines */
+    overflow-y: auto; /* Makes ONLY this element scrollable */
+    flex-grow: 1;
+    color: var(--text-gray-100);
+    white-space: pre-wrap;
   }
 
   .button-group {
     display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    margin-top: 15px;
+    gap: 8px;
   }
 
   .button-group button {
-    flex: 1 1 auto;
-  }
-
-  .secondary-button-group {
-    display: flex;
-    justify-content: space-between;
-    gap: 10px;
-    margin-top: 10px;
-  }
-
-  .secondary-button-group button {
     flex: 1;
   }
 
-  .copy-button {
-    background-color: var(--info-color) !important;
-    color: white;
-    width: 100%;
-    margin-top: 12px;
-    background-image: linear-gradient(to bottom right, #7986CB, var(--info-color));
-    border-radius: 10px;
+  .bottom-actions {
+    margin-top: 16px;
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0; /* Prevents this container from shrinking */
   }
 
-  .send-button {
-    background-color: #FF9800 !important;
-    color: white;
-    /* width: 100%; */
-    margin-top: 10px;
-    background-image: linear-gradient(to bottom right, #FFB74D, #FF9800);
-    border-radius: 10px;
-  }
-
-  .switch-button {
-    background-color: #03A9F4 !important; /* A nice blue */
-    color: white;
-    margin-top: 10px;
-    background-image: linear-gradient(to bottom right, #4FC3F7, #03A9F4);
-    border-radius: 10px;
-  }
-
-  .pause-resume-button {
-    background-color: #FFC107 !important; /* Amber color */
-    color: #333;
-    background-image: linear-gradient(to bottom right, #FFD54F, #FFC107);
+  .bottom-actions button {
+    flex: 1;
   }
 `;
 
@@ -412,23 +407,24 @@ const App: React.FC = () => {
     };
 
     return (
-        <>
+        <div className="app-container">
             <style>{style}</style>
-            <h2>Proof-of-Art</h2>
+            <h2>PengWin</h2>
+            
             <div className="button-group">
                 <button 
                     id="start-button" 
                     onClick={() => toggleCapture(true)}
                     disabled={state.isCapturing}
                 >
-                    Start Monitoring
+                    Start
                 </button>
                 <button 
                     id="stop-button" 
                     onClick={() => toggleCapture(false)}
                     disabled={!state.isCapturing}
                 >
-                    Stop Monitoring
+                    Stop
                 </button>
                 <button
                     onClick={handlePauseResume}
@@ -440,36 +436,37 @@ const App: React.FC = () => {
             </div>
             
             <div className="status-area">
-                <p>Status: <strong>{state.statusMessage}</strong></p>
-                <p className="dynamic-text">Detail: {state.dynamicDetail}</p>
+                <p><strong>{state.statusMessage}</strong></p>
+                <p className="dynamic-text">{state.dynamicDetail}</p>
             </div>
 
             <div className="json-display-container">
-                <p style={{marginTop: '15px'}}>Session Interactions:</p>
+                <p>Session Interactions:</p>
                 <code className="json-display">
                     {state.sessionInteractions.map((interaction, index) => (
                         `// --- Interaction ${index + 1} ---\n${pretty(interaction)}\n\n`
                     )).join('')}
                     {`// --- Current Interaction ---\n${state.latestInteractionText}`}
                 </code>
-                <div className="secondary-button-group">
-                    <button
-                        onClick={sendToServer}
-                        disabled={state.latestInteractionText === "No interaction captured." && state.sessionInteractions.length === 0}
-                        className="send-button"
-                    >
-                        Send Session
-                    </button>
-                    <button
-                        onClick={handleSwitchModel}
-                        disabled={!state.isCapturing || state.isPaused || state.latestInteractionText === "No interaction captured."}
-                        className="switch-button"
-                    >
-                        Switch Model
-                    </button>
-                </div>
             </div>
-        </>
+
+            <div className="bottom-actions">
+                <button
+                    onClick={sendToServer}
+                    disabled={state.latestInteractionText === "No interaction captured." && state.sessionInteractions.length === 0}
+                    className="button-primary"
+                >
+                    Send Session
+                </button>
+                <button
+                    onClick={handleSwitchModel}
+                    disabled={!state.isCapturing || state.isPaused || state.latestInteractionText === "No interaction captured."}
+                    className="button-primary"
+                >
+                    Switch Model
+                </button>
+            </div>
+        </div>
     );
 };
 
