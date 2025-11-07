@@ -17,7 +17,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Initialize MSAL
+// Initialize MSAL with dynamic configuration
+// The redirect URI is set based on the current deployment URL
 const msalInstance = new PublicClientApplication(msalConfig);
 
 // Initialize MSAL (will be called in useEffect)
@@ -39,6 +40,23 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     // Initialize MSAL and check for existing accounts on mount
     const init = async () => {
       await initializeMsal();
+      
+      // Handle redirect response (if using redirect flow)
+      try {
+        const response = await msalInstance.handleRedirectPromise();
+        if (response) {
+          // User just logged in via redirect
+          setAccount(response.account);
+          setToken(response.accessToken);
+          localStorage.setItem("msal_access_token", response.accessToken);
+          localStorage.setItem("msal_account", JSON.stringify(response.account));
+          return;
+        }
+      } catch (error) {
+        console.error("Error handling redirect:", error);
+      }
+      
+      // Check for existing accounts
       const accounts = msalInstance.getAllAccounts();
       if (accounts.length > 0) {
         setAccount(accounts[0]);

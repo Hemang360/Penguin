@@ -1,5 +1,9 @@
 import axios from 'axios'
 
+// API base URL configuration
+// In production, set VITE_API_URL environment variable in Netlify
+// For development, defaults to localhost:8787
+// For production, should be your backend API URL (e.g., https://api.yourapp.com)
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8787'
 const api = axios.create({ baseURL })
 
